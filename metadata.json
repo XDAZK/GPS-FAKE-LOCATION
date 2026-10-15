@@ -1,0 +1,6 @@
+{
+  "name": "GeoSim Mock GPS",
+  "description": "Giả lập vị trí GPS, mô phỏng lộ trình di chuyển tự động với bản đồ tương tác, nhịp thở rung tự nhiên, xuất GPX và bảo mật nhà phát triển.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

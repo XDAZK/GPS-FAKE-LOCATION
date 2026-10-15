@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simulated Route dashed path behind the pin -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M32,74 C36,66 44,68 54,64 C64,60 72,66 76,58" />
+    <!-- Waypoint dots on path -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M32,74m-3,0a3,3 0 1,0 6,0a3,3 0 1,0 -6,0" />
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M76,58m-3,0a3,3 0 1,0 6,0a3,3 0 1,0 -6,0" />
+
+    <!-- Center GPS Pin Drop Silhouette -->
+    <!-- Pin body centered around (54, 46), tip at (54, 68) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 C43.5,26 35,34.5 35,45 C35,58 54,72 54,72 C54,72 73,58 73,45 C73,34.5 64.5,26 54,26 Z" />
+
+    <!-- Inner Target Pulse Core in Pin -->
+    <path
+        android:fillColor="#0284C7"
+        android:pathData="M54,39 A6,6 0 1,0 54,51 A6,6 0 1,0 54,39 Z" />
+
+    <!-- Satellite signal arc waves above pin -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M43,24 C46.5,21 50,19.5 54,19.5 C58,19.5 61.5,21 65,24" />
+</vector>
