@@ -400,6 +400,7 @@ fun MapWebView(
                 }
             }.apply {
                 webViewRef = this
+                @Suppress("DEPRECATION")
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
