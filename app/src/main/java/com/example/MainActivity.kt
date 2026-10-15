@@ -69,6 +69,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Initialize OpenStreetMap Osmdroid Configuration
+        org.osmdroid.config.Configuration.getInstance().userAgentValue = packageName
+        org.osmdroid.config.Configuration.getInstance().load(
+            this,
+            getSharedPreferences("osmdroid", MODE_PRIVATE)
+        )
+
         setContent {
             MyApplicationTheme {
                 MainApp(viewModel = viewModel)

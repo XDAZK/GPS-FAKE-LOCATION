@@ -69,9 +69,11 @@ class FloatingJoystickService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         vibrationHelper = VibrationHelper(this)
         createNotificationChannel()
+        promoteToForeground()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        promoteToForeground()
         val action = intent?.action ?: ACTION_START
 
         if (action == ACTION_STOP) {
@@ -81,28 +83,48 @@ class FloatingJoystickService : Service() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             Log.e(TAG, "Cannot start overlay: SYSTEM_ALERT_WINDOW not granted")
-            stopSelf()
+            stopOverlay()
             return START_NOT_STICKY
         }
 
         if (rootLayout == null && bubbleView == null) {
             try {
-                val notification = buildForegroundNotification()
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
-                } else {
-                    startForeground(NOTIFICATION_ID, notification)
-                }
                 showFloatingControllers()
                 isOverlayRunning = true
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start floating joystick service", e)
-                stopSelf()
+                stopOverlay()
                 return START_NOT_STICKY
             }
         }
 
         return START_STICKY
+    }
+
+    private fun promoteToForeground() {
+        try {
+            val notification = buildForegroundNotification()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val hasLoc = androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.ACCESS_FINE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                if (hasLoc) {
+                    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed promoteToForeground", e)
+        }
     }
 
     private fun createNotificationChannel() {

@@ -57,17 +57,37 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Prepare APKs
+        run: |
+          mkdir -p release-assets
+          cp app/build/outputs/apk/debug/app-debug.apk release-assets/GeoSim-GPS-Mock.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release-assets/app-debug.apk
+
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GeoSim-Android-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: release-assets/GeoSim-GPS-Mock.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Create Release and Upload APK (On Tags only)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Create or Update GitHub Release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/app-debug.apk
-          generate_release_notes: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'GeoSim GPS Mock (Latest Build)' }}
+          body: |
+            ## 📱 GeoSim GPS Mock - Bản build APK mới nhất
+            - **Commit:** `${{ github.sha }}`
+            - **Branch:** `${{ github.ref_name }}`
+
+            ### ⬇️ Tải APK cài đặt:
+            Tải file **`GeoSim-GPS-Mock.apk`** ở danh sách **Assets** bên dưới trực tiếp về điện thoại Android để cài đặt (không cần giải nén file zip).
+          files: |
+            release-assets/GeoSim-GPS-Mock.apk
+            release-assets/app-debug.apk
+          draft: false
+          prerelease: false
+          make_latest: true

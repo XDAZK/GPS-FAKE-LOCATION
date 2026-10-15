@@ -29,15 +29,24 @@ class VibrationHelper(context: Context) {
         if (vibrator == null || !vibrator.hasVibrator()) return
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val clamped = strength.coerceIn(1, 255)
-                val effect = VibrationEffect.createOneShot(55L, clamped)
+                val clamped = strength.coerceIn(50, 255)
+                // Dual-impact impulse waveform mimicking human heel-strike impact & rebound
+                // This reliably stimulates Android MEMS accelerometers to trigger StepDetector
+                val timings = longArrayOf(0, 48, 25, 48)
+                val amplitudes = intArrayOf(0, clamped, 0, (clamped * 0.85f).toInt().coerceAtLeast(1))
+                val effect = VibrationEffect.createWaveform(timings, amplitudes, -1)
                 vibrator.vibrate(effect)
             } else {
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(55L)
+                vibrator.vibrate(longArrayOf(0, 48, 25, 48), -1)
             }
         } catch (_: Exception) {
-            // Ignore if vibration fails on specific hardware
+            // Fallback for devices without amplitude control
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(55L, VibrationEffect.DEFAULT_AMPLITUDE))
+                }
+            } catch (_: Exception) {}
         }
     }
 

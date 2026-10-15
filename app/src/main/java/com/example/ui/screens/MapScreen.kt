@@ -71,7 +71,7 @@ import com.example.data.model.SimulationStatus
 import com.example.ui.MainViewModel
 import com.example.ui.components.CircularJoystickView
 import com.example.ui.components.DevModeBanner
-import com.example.ui.components.MapWebView
+import com.example.ui.components.NativeOsmdroidMapView
 import com.example.ui.components.SimulationSettingsSheet
 import com.example.util.GeoUtils
 import kotlin.math.cos
@@ -96,8 +96,8 @@ fun MapScreen(
     var isPinMode by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Interactive OpenStreetMap Primary Viewer
-        MapWebView(
+        // Native OpenStreetMap Viewer powered by Osmdroid SDK (0xfnzero/gps-locator pattern)
+        NativeOsmdroidMapView(
             currentPoint = simulationProgress.currentPoint ?: selectedPoint,
             waypoints = waypoints,
             isMocking = simulationProgress.isMockActive,
@@ -537,24 +537,24 @@ fun MapScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.End
         ) {
-            // Toggle Joystick Button
+            // Toggle On-Screen 360° Circular Joystick
             FloatingActionButton(
                 onClick = { showJoystick = !showJoystick },
-                containerColor = if (showJoystick) Color(0xFF0284C7) else Color(0xFF1E293B),
-                contentColor = Color.White,
+                containerColor = if (showJoystick) Color(0xFF0284C7) else Color(0xFF0F172A),
+                contentColor = if (showJoystick) Color.White else Color(0xFF38BDF8),
                 shape = CircleShape,
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(48.dp)
                     .testTag("toggle_joystick_button")
             ) {
                 Icon(
-                    imageVector = Icons.Default.MyLocation,
-                    contentDescription = "Joystick",
-                    modifier = Modifier.size(20.dp)
+                    imageVector = Icons.Default.SportsEsports,
+                    contentDescription = "Cần điều khiển tròn 360°",
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
-            // Floating Overlay Joystick over other apps
+            // Floating Overlay Joystick over other apps (Optional system overlay)
             FloatingActionButton(
                 onClick = { viewModel.toggleOverlayJoystick() },
                 containerColor = Color(0xFF0F172A),
@@ -565,8 +565,9 @@ fun MapScreen(
                     .testTag("toggle_overlay_joystick_fab")
             ) {
                 Icon(
-                    imageVector = Icons.Default.SportsEsports,
-                    contentDescription = "Bật cần điều khiển nổi trên màn hình"
+                    imageVector = Icons.Default.Tune,
+                    contentDescription = "Bật cần điều khiển nổi trên màn hình khác",
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
