@@ -19,6 +19,7 @@ import com.example.service.MockLocationManager
 import com.example.service.MockLocationService
 import com.example.util.GeoUtils
 import com.example.util.GpxExporter
+import com.example.util.RealLocationProvider
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,11 +35,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = MockLocationRepository(db.mockDao())
     private val mockLocationManager = MockLocationManager(application)
 
-    // Current targeted/selected point (Default: Hồ Hoàn Kiếm, Hà Nội)
+    // Current targeted/selected point (Default: Hồ Hoàn Kiếm, Hà Nội or user's real GPS)
     private val _selectedPoint = MutableStateFlow(
-        GeoPoint(latitude = 21.028511, longitude = 105.854444, name = "Hồ Hoàn Kiếm, Hà Nội")
+        GeoPoint(latitude = 21.028511, longitude = 105.854444, name = "Đang tải vị trí...")
     )
     val selectedPoint: StateFlow<GeoPoint> = _selectedPoint.asStateFlow()
+
+    // Real device physical GPS point (when not spoofing)
+    private val _realLocationPoint = MutableStateFlow<GeoPoint?>(null)
+    val realLocationPoint: StateFlow<GeoPoint?> = _realLocationPoint.asStateFlow()
+
+    // Is currently fetching real location
+    private val _isLocatingRealGps = MutableStateFlow(false)
+    val isLocatingRealGps: StateFlow<Boolean> = _isLocatingRealGps.asStateFlow()
 
     // Waypoints for Route Simulation
     private val _waypoints = MutableStateFlow<List<GeoPoint>>(emptyList())
@@ -83,6 +92,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         refreshDevStatus()
+        fetchRealLocation(moveToCenter = true, showFeedback = false)
     }
 
     fun clearUserMessage() {
@@ -206,7 +216,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             action = MockLocationService.ACTION_STOP
         }
         context.startService(intent)
-        _userMessage.value = "Đã dừng giả lập vị trí"
+        mockLocationManager.stopMocking()
+        _userMessage.value = "Đã tắt giả lập. Đang lấy lại vị trí GPS thật..."
+        fetchRealLocation(moveToCenter = true, showFeedback = true)
+    }
+
+    /**
+     * Retrieve the user's REAL physical device GPS location via GPS/Network hardware
+     */
+    fun fetchRealLocation(moveToCenter: Boolean = true, showFeedback: Boolean = true) {
+        val context = getApplication<Application>()
+        viewModelScope.launch {
+            _isLocatingRealGps.value = true
+            try {
+                val realLoc = RealLocationProvider.getRealCurrentLocation(context)
+                if (realLoc != null) {
+                    val point = GeoPoint(
+                        latitude = realLoc.latitude,
+                        longitude = realLoc.longitude,
+                        altitude = realLoc.altitude,
+                        name = "Vị trí GPS thật của máy"
+                    )
+                    _realLocationPoint.value = point
+                    if (moveToCenter || !simulationProgress.value.isMockActive) {
+                        _selectedPoint.value = point
+                    }
+                    if (showFeedback) {
+                        _userMessage.value = String.format(
+                            java.util.Locale.US,
+                            "Đã lấy đúng vị trí thật: %.5f, %.5f",
+                            realLoc.latitude,
+                            realLoc.longitude
+                        )
+                    }
+                } else {
+                    if (showFeedback) {
+                        _userMessage.value = "Không thể lấy tín hiệu GPS thật. Vui lòng bật Vị trí (GPS) trên thiết bị."
+                    }
+                }
+            } catch (e: Exception) {
+                if (showFeedback) {
+                    _userMessage.value = "Lỗi đọc GPS: ${e.message}"
+                }
+            } finally {
+                _isLocatingRealGps.value = false
+            }
+        }
+    }
+
+    /**
+     * Reverse order of route waypoints
+     */
+    fun reverseWaypoints() {
+        val list = _waypoints.value
+        if (list.size >= 2) {
+            val reversed = list.reversed()
+            _waypoints.value = reversed
+            MockLocationService.setWaypoints(reversed)
+            _userMessage.value = "Đã đảo chiều lộ trình"
+        }
     }
 
     /**
@@ -310,48 +378,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _userMessage.value = "Đã nhập thành công ${parsed.size} điểm từ file GPX"
         } else {
             _userMessage.value = "Không tìm thấy dữ liệu tọa độ hợp lệ trong file GPX"
-        }
-    }
-
-    /**
-     * Launch or toggle the Floating Window Overlay Joystick over other apps
-     */
-    fun toggleOverlayJoystick() {
-        val context = getApplication<Application>()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M &&
-            !android.provider.Settings.canDrawOverlays(context)
-        ) {
-            _userMessage.value = "Vui lòng cấp quyền 'Hiển thị trên các ứng dụng khác' trong Cài đặt để dùng cần điều khiển nổi"
-            try {
-                val intent = Intent(
-                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:${context.packageName}")
-                ).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-            } catch (_: Exception) {}
-            return
-        }
-
-        if (com.example.service.FloatingJoystickService.isOverlayRunning) {
-            try {
-                val intent = Intent(context, com.example.service.FloatingJoystickService::class.java).apply {
-                    action = com.example.service.FloatingJoystickService.ACTION_STOP
-                }
-                context.startService(intent)
-                _userMessage.value = "Đã tắt cần điều khiển nổi"
-            } catch (_: Exception) {}
-        } else {
-            try {
-                val intent = Intent(context, com.example.service.FloatingJoystickService::class.java).apply {
-                    action = com.example.service.FloatingJoystickService.ACTION_START
-                }
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                _userMessage.value = "Đã bật Cần điều khiển nổi trên màn hình"
-            } catch (e: Exception) {
-                _userMessage.value = "Không thể khởi động cần điều khiển nổi: ${e.message}"
-            }
         }
     }
 }

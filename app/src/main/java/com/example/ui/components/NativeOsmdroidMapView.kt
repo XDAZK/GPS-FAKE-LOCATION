@@ -300,7 +300,7 @@ fun NativeOsmdroidMapView(
         }
 
         // Center Coordinate Indicator & Quick Select Button (at bottom center of map)
-        if (!isMocking) {
+        if (!isMocking && !isPinMode) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color(0xF20F172A),

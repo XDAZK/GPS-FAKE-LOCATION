@@ -318,20 +318,7 @@ fun ShieldScreen(
                     onCheckedChange = { viewModel.updateConfig(config.copy(enableRandomPause = it)) }
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
 
-                SwitchFeatureRow(
-                    title = "Giả lập độ rung điện thoại (Nhịp thở thật)",
-                    desc = "Phát xung rung haptic nhẹ nhàng đồng bộ nhịp thở hoặc bước chân: ${config.vibrationPattern.label}",
-                    checked = config.vibrationPattern != VibrationCadence.OFF,
-                    onCheckedChange = { enabled ->
-                        viewModel.updateConfig(
-                            config.copy(
-                                vibrationPattern = if (enabled) VibrationCadence.BREATHING_RELAXED else VibrationCadence.OFF
-                            )
-                        )
-                    }
-                )
 
                 Spacer(modifier = Modifier.height(10.dp))
 

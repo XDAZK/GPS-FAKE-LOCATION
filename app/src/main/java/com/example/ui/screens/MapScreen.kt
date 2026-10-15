@@ -6,9 +6,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,29 +19,40 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AddLocation
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.EditLocation
+import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,7 +60,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,17 +77,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.GeoPoint
 import com.example.data.model.SimulationStatus
 import com.example.ui.MainViewModel
-import com.example.ui.components.CircularJoystickView
 import com.example.ui.components.DevModeBanner
 import com.example.ui.components.NativeOsmdroidMapView
 import com.example.ui.components.SimulationSettingsSheet
 import com.example.util.GeoUtils
-import kotlin.math.cos
-import kotlin.math.sin
 
 @Composable
 fun MapScreen(
@@ -88,20 +96,21 @@ fun MapScreen(
     val simulationConfig by viewModel.simulationConfig.collectAsState()
     val isDevModeEnabled by viewModel.isDevModeEnabled.collectAsState()
     val isMockPermitted by viewModel.isMockPermitted.collectAsState()
+    val isLocatingRealGps by viewModel.isLocatingRealGps.collectAsState()
 
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showCoordinatesDialog by remember { mutableStateOf(false) }
     var showSearchDialog by remember { mutableStateOf(false) }
-    var showJoystick by remember { mutableStateOf(false) }
-    var isPinMode by remember { mutableStateOf(false) }
+    var showSaveRouteDialog by remember { mutableStateOf(false) }
+    var isRouteMode by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
-        // Native OpenStreetMap Viewer powered by Osmdroid SDK (0xfnzero/gps-locator pattern)
+        // Native OpenStreetMap with Osmdroid
         NativeOsmdroidMapView(
             currentPoint = simulationProgress.currentPoint ?: selectedPoint,
             waypoints = waypoints,
             isMocking = simulationProgress.isMockActive,
-            isPinMode = isPinMode,
+            isPinMode = isRouteMode,
             onMapClick = { lat, lng ->
                 viewModel.selectLocation(lat, lng)
             },
@@ -113,7 +122,7 @@ fun MapScreen(
             }
         )
 
-        // Top Overlay: Dev Mode Warning Banner & Search/Control Bar
+        // Top Area: Status Banner, Search & Coords
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -126,7 +135,7 @@ fun MapScreen(
                 onRefreshCheck = { viewModel.refreshDevStatus() }
             )
 
-            // Location Bar
+            // Location Bar Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xEE0F172A)),
                 shape = RoundedCornerShape(16.dp),
@@ -142,6 +151,21 @@ fun MapScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (simulationProgress.isMockActive) Color(0xFFEF4444) else Color(0xFF10B981))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (simulationProgress.isMockActive) "ĐANG ẨN VỊ TRÍ THẬT" else "VỊ TRÍ GPS THẬT",
+                                color = if (simulationProgress.isMockActive) Color(0xFFF87171) else Color(0xFF34D399),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         Text(
                             text = selectedPoint.name.ifEmpty { "Vị trí đã chọn" },
                             style = MaterialTheme.typography.titleMedium,
@@ -158,23 +182,43 @@ fun MapScreen(
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFF38BDF8),
-                            fontSize = 12.sp
+                            fontSize = 11.sp
                         )
                     }
 
-                    // Search Button
+                    // Get Real Location Button
+                    IconButton(
+                        onClick = { viewModel.fetchRealLocation(moveToCenter = true, showFeedback = true) },
+                        modifier = Modifier.testTag("get_real_location_button")
+                    ) {
+                        if (isLocatingRealGps) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color(0xFF10B981),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.GpsFixed,
+                                contentDescription = "Lấy vị trí GPS thật",
+                                tint = Color(0xFF10B981)
+                            )
+                        }
+                    }
+
+                    // Search Presets Button
                     IconButton(
                         onClick = { showSearchDialog = true },
                         modifier = Modifier.testTag("search_location_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Search,
-                            contentDescription = "Tìm kiếm",
+                            contentDescription = "Tìm kiếm nhanh",
                             tint = Color(0xFF38BDF8)
                         )
                     }
 
-                    // Coordinates input Button
+                    // Input Coordinates Directly Button
                     IconButton(
                         onClick = { showCoordinatesDialog = true },
                         modifier = Modifier.testTag("enter_coordinates_button")
@@ -194,75 +238,279 @@ fun MapScreen(
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = "Cài đặt giả lập",
-                            tint = Color(0xFF34D399)
+                            tint = Color(0xFF94A3B8)
                         )
                     }
                 }
             }
 
-            // Pin Mode Active Info Banner
-            AnimatedVisibility(visible = isPinMode) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xF01E3A8A)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 2.dp)
+            // Mode Selector: Single Point vs Route Mode
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xEE0F172A),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (!isRouteMode) Color(0xFF0284C7) else Color.Transparent,
+                        onClick = { isRouteMode = false },
+                        modifier = Modifier.height(30.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                            Text("📍", fontSize = 16.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
-                                Text(
-                                    text = "Chế độ ghim lộ trình (${waypoints.size} điểm)",
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    text = "Chạm bản đồ để ghim điểm 1, 2, 3... (Chạm vào điểm để xóa)",
-                                    color = Color(0xFFBAE6FD),
-                                    fontSize = 11.sp
-                                )
-                            }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        ) {
+                            Text(
+                                text = "📍 1 Điểm cố định",
+                                color = if (!isRouteMode) Color.White else Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                fontWeight = if (!isRouteMode) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
+                    }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (waypoints.size >= 2) {
-                                Button(
-                                    onClick = { viewModel.startRouteSimulation() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(32.dp)
-                                ) {
-                                    Text("Chạy ngay", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
-                            if (waypoints.isNotEmpty()) {
-                                TextButton(
-                                    onClick = { viewModel.clearWaypoints() },
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(32.dp)
-                                ) {
-                                    Text("Xóa ghim", color = Color(0xFFFCA5A5), fontSize = 11.sp)
-                                }
-                            }
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isRouteMode) Color(0xFF0284C7) else Color.Transparent,
+                        onClick = { isRouteMode = true },
+                        modifier = Modifier.height(30.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        ) {
+                            Text(
+                                text = if (waypoints.isNotEmpty()) "🗺️ Lộ trình (${waypoints.size})" else "🗺️ Tạo Lộ trình",
+                                color = if (isRouteMode) Color.White else Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                fontWeight = if (isRouteMode) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
                     }
                 }
             }
         }
 
-        // Live Simulation HUD Card (Visible when running or resting)
+        // Route Management Panel (Appears when Route Mode is active)
+        AnimatedVisibility(
+            visible = isRouteMode && simulationProgress.status == SimulationStatus.IDLE,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 90.dp, start = 12.dp, end = 12.dp)
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xF50F172A)),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    // Header with instructions and quick buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Route,
+                                contentDescription = null,
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Lộ trình: ${waypoints.size} điểm (${String.format(java.util.Locale.US, "%.1f km", GeoUtils.calculateTotalDistance(waypoints) / 1000.0)})",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Reverse order
+                            if (waypoints.size >= 2) {
+                                IconButton(
+                                    onClick = { viewModel.reverseWaypoints() },
+                                    modifier = Modifier.size(30.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SwapVert,
+                                        contentDescription = "Đảo chiều",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            // Save Route
+                            if (waypoints.size >= 2) {
+                                IconButton(
+                                    onClick = { showSaveRouteDialog = true },
+                                    modifier = Modifier.size(30.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Save,
+                                        contentDescription = "Lưu lộ trình",
+                                        tint = Color(0xFF34D399),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            // Clear all waypoints
+                            if (waypoints.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { viewModel.clearWaypoints() },
+                                    modifier = Modifier.size(30.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Xóa hết",
+                                        tint = Color(0xFFF87171),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "💡 Chạm bất kỳ đâu trên bản đồ hoặc bấm '+ Thêm điểm tâm' để thêm mốc di chuyển.",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
+
+                    // Waypoints Horizontal Scroll List
+                    if (waypoints.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            contentPadding = PaddingValues(vertical = 2.dp)
+                        ) {
+                            itemsIndexed(waypoints) { idx, wp ->
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color(0xFF1E293B),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "${idx + 1}. ${wp.name}",
+                                            color = Color(0xFFE2E8F0),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        IconButton(
+                                            onClick = { viewModel.removeWaypoint(idx) },
+                                            modifier = Modifier.size(18.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Xóa điểm này",
+                                                tint = Color(0xFFFCA5A5),
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Speed selector shortcuts
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "🚶 5 km/h" to 5f,
+                            "🏃 12 km/h" to 12f,
+                            "🛵 30 km/h" to 30f,
+                            "🚗 50 km/h" to 50f
+                        ).forEach { (label, speed) ->
+                            val isSelected = simulationConfig.speedKmh == speed
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                onClick = { viewModel.updateConfig(simulationConfig.copy(speedKmh = speed)) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Actions Row: Add Current Center vs Start Simulation
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Add center of map button
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.addWaypoint(selectedPoint.latitude, selectedPoint.longitude, selectedPoint.name)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                        ) {
+                            Icon(Icons.Default.AddLocation, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("+ Thêm điểm tâm", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Start Route Button
+                        Button(
+                            onClick = { viewModel.startRouteSimulation() },
+                            enabled = waypoints.size >= 2,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF10B981),
+                                disabledContainerColor = Color(0xFF334155)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .height(42.dp)
+                                .testTag("start_pinned_route_button")
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Chạy lộ trình (${waypoints.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Live Simulation Running HUD (Active during route simulation)
         AnimatedVisibility(
             visible = simulationProgress.status != SimulationStatus.IDLE,
             enter = slideInVertically { it } + fadeIn(),
@@ -311,22 +559,12 @@ fun MapScreen(
                             )
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // Live Simulated Heart Rate Monitor
-                            Text(
-                                text = "❤️ ${simulationProgress.currentHeartRateBpm} BPM",
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFB7185),
-                                fontSize = 13.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "${String.format(java.util.Locale.US, "%.1f", simulationProgress.currentSpeedKmh)} km/h",
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF38BDF8),
-                                fontSize = 13.sp
-                            )
-                        }
+                        Text(
+                            text = "${String.format(java.util.Locale.US, "%.1f", simulationProgress.currentSpeedKmh)} km/h",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8),
+                            fontSize = 14.sp
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -351,19 +589,19 @@ fun MapScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Còn: ${GeoUtils.formatDistance(simulationProgress.remainingDistanceMeters)} • ETA: ${GeoUtils.formatDuration(simulationProgress.remainingTimeSeconds)}",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 12.sp
+                                text = "Còn lại: ${GeoUtils.formatDistance(simulationProgress.remainingDistanceMeters)}",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "👟 ${simulationProgress.currentCadenceSpm} SPM (${simulationProgress.totalSteps} bước) • 🔥 ${String.format(java.util.Locale.US, "%.1f", simulationProgress.caloriesBurnedKcal)} kcal",
-                                color = Color(0xFF38BDF8),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
+                                text = "Thời gian ước tính: ${GeoUtils.formatDuration(simulationProgress.remainingTimeSeconds)}",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
                             )
                         }
 
-                        Row {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (simulationProgress.status == SimulationStatus.RUNNING || simulationProgress.status == SimulationStatus.RESTING) {
                                 IconButton(
                                     onClick = { viewModel.pauseSimulation() },
@@ -393,7 +631,7 @@ fun MapScreen(
                             ) {
                                 Icon(
                                     Icons.Default.Stop,
-                                    contentDescription = "Dừng lại",
+                                    contentDescription = "Dừng và khôi phục vị trí thật",
                                     tint = Color(0xFFEF4444)
                                 )
                             }
@@ -403,238 +641,74 @@ fun MapScreen(
             }
         }
 
-        // Interactive On-Screen 360° Circular Joystick Controller
-        AnimatedVisibility(
-            visible = showJoystick,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 90.dp)
-        ) {
-            var inAppSpeed by remember { mutableStateOf(12.0f) }
-
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xF50F172A)),
+        // Bottom Action Island: Single Point Mock & Real GPS Toggle
+        if (!isRouteMode && simulationProgress.status == SimulationStatus.IDLE) {
+            Surface(
                 shape = RoundedCornerShape(24.dp),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF38BDF8)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+                color = Color(0xF20F172A),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (simulationProgress.isMockActive) Color(0xFFEF4444) else Color(0xFF0284C7)
+                ),
+                shadowElevation = 10.dp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 90.dp, start = 16.dp, end = 16.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Header with close
-                    Row(
-                        modifier = Modifier.width(200.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🕹️ Bánh đà 360°",
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF38BDF8),
-                            fontSize = 12.sp
-                        )
-                        IconButton(
-                            onClick = { showJoystick = false },
-                            modifier = Modifier.size(24.dp)
+                    if (!simulationProgress.isMockActive) {
+                        // Start Spoofing Single Point
+                        Button(
+                            onClick = { viewModel.startPointMock() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.testTag("start_mock_location_button")
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = "Đóng", tint = Color.Gray, modifier = Modifier.size(16.dp))
-                        }
-                    }
-
-                    // Live telemetry tag
-                    Text(
-                        text = "👟 ${simulationProgress.currentCadenceSpm} SPM • ${simulationProgress.totalSteps} bước\n🔥 ${simulationProgress.caloriesBurnedKcal.toInt()} kcal • ❤️ ${simulationProgress.currentHeartRateBpm} BPM",
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Step Haptic Shockwave Toggle Button
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = if (simulationConfig.enablePhysicalStepVibration) Color(0xFF059669) else Color(0xFF475569),
-                        onClick = {
-                            viewModel.updateConfig(
-                                simulationConfig.copy(enablePhysicalStepVibration = !simulationConfig.enablePhysicalStepVibration)
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
                             )
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .height(28.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = if (simulationConfig.enablePhysicalStepVibration) "⚡ Tự đếm bước: BẬT" else "⚡ Tự đếm bước: TẮT",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Bắt đầu Fake vị trí này", fontWeight = FontWeight.Bold)
+                        }
+
+                        // Locate Real GPS Button
+                        OutlinedButton(
+                            onClick = { viewModel.fetchRealLocation(moveToCenter = true, showFeedback = true) },
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.testTag("fetch_real_gps_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MyLocation,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(16.dp)
                             )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Về vị trí thật", color = Color(0xFF10B981), fontWeight = FontWeight.SemiBold)
+                        }
+                    } else {
+                        // Stop Spoofing & Immediately Return to Real Physical GPS Location
+                        Button(
+                            onClick = { viewModel.stopMocking() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.testTag("stop_mock_location_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("TẮT ẨN VỊ TRÍ (Về GPS thật)", fontWeight = FontWeight.Bold)
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Speed selection chips
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        listOf("🚶 5k" to 5f, "🏃 12k" to 12f, "🚴 25k" to 25f, "🚗 50k" to 50f).forEach { (lbl, spd) ->
-                            val isSel = inAppSpeed == spd
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isSel) Color(0xFF0284C7) else Color(0xFF1E293B),
-                                onClick = { inAppSpeed = spd }
-                            ) {
-                                Text(
-                                    text = lbl,
-                                    color = Color.White,
-                                    fontSize = 9.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Circular Joystick Analog Component
-                    AndroidView(
-                        factory = { ctx: android.content.Context ->
-                            CircularJoystickView(ctx).apply {
-                                onMoveListener = { angleDegrees: Float, power: Float ->
-                                    val speedMps = (inAppSpeed * 1000f) / 3600f
-                                    val stepDistMeters = (speedMps * 0.280f * power).coerceAtLeast(0.8f).toDouble()
-                                    val rad = Math.toRadians(angleDegrees.toDouble())
-                                    val deltaLat = stepDistMeters * cos(rad)
-                                    val deltaLng = stepDistMeters * sin(rad)
-                                    viewModel.nudgeLocation(deltaLat, deltaLng, inAppSpeed * power)
-                                }
-                            }
-                        },
-                        modifier = Modifier.size(170.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Button to launch system overlay over other apps
-                    TextButton(
-                        onClick = { viewModel.toggleOverlayJoystick() },
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("Mở nổi trên app khác ↗", color = Color(0xFFFBBF24), fontSize = 10.sp)
-                    }
-                }
-            }
-        }
-
-        // Right-side Floating Action Buttons
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 90.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.End
-        ) {
-            // Toggle On-Screen 360° Circular Joystick
-            FloatingActionButton(
-                onClick = { showJoystick = !showJoystick },
-                containerColor = if (showJoystick) Color(0xFF0284C7) else Color(0xFF0F172A),
-                contentColor = if (showJoystick) Color.White else Color(0xFF38BDF8),
-                shape = CircleShape,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("toggle_joystick_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SportsEsports,
-                    contentDescription = "Cần điều khiển tròn 360°",
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            // Floating Overlay Joystick over other apps (Optional system overlay)
-            FloatingActionButton(
-                onClick = { viewModel.toggleOverlayJoystick() },
-                containerColor = Color(0xFF0F172A),
-                contentColor = Color(0xFFFBBF24),
-                shape = CircleShape,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("toggle_overlay_joystick_fab")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Tune,
-                    contentDescription = "Bật cần điều khiển nổi trên màn hình khác",
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            // Toggle Pin Mode Button
-            FloatingActionButton(
-                onClick = { isPinMode = !isPinMode },
-                containerColor = if (isPinMode) Color(0xFF0284C7) else Color(0xFF0F172A),
-                contentColor = if (isPinMode) Color.White else Color(0xFF38BDF8),
-                shape = CircleShape,
-                modifier = Modifier
-                    .size(48.dp)
-                    .testTag("toggle_pin_mode_fab")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Route,
-                    contentDescription = if (isPinMode) "Tắt chế độ ghim" else "Bật chế độ ghim điểm"
-                )
-            }
-
-            // Quick Run Pinned Route Button
-            if (waypoints.size >= 2 && simulationProgress.status == SimulationStatus.IDLE) {
-                Button(
-                    onClick = { viewModel.startRouteSimulation() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.testTag("start_pinned_route_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Chạy lộ trình (${waypoints.size})", fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // Main Action Button: Start / Stop Point Mock
-            if (!simulationProgress.isMockActive) {
-                Button(
-                    onClick = { viewModel.startPointMock() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.testTag("start_mock_location_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Fake vị trí này", fontWeight = FontWeight.Bold)
-                }
-            } else {
-                Button(
-                    onClick = { viewModel.stopMocking() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier.testTag("stop_mock_location_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Stop,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Dừng Fake", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -756,6 +830,52 @@ fun MapScreen(
             dismissButton = {
                 TextButton(onClick = { showSearchDialog = false }) {
                     Text("Đóng")
+                }
+            }
+        )
+    }
+
+    // Save Route Dialog
+    if (showSaveRouteDialog) {
+        var routeNameInput by remember {
+            mutableStateOf("Lộ trình ${waypoints.size} điểm - ${java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}")
+        }
+
+        AlertDialog(
+            onDismissRequest = { showSaveRouteDialog = false },
+            title = { Text("Lưu lộ trình này", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        "Nhập tên để lưu lại lộ trình gồm ${waypoints.size} điểm mốc:",
+                        fontSize = 13.sp,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = routeNameInput,
+                        onValueChange = { routeNameInput = it },
+                        label = { Text("Tên lộ trình") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (routeNameInput.isNotBlank()) {
+                            viewModel.saveRoute(routeNameInput.trim())
+                            showSaveRouteDialog = false
+                        }
+                    }
+                ) {
+                    Text("Lưu lại")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveRouteDialog = false }) {
+                    Text("Hủy")
                 }
             }
         )

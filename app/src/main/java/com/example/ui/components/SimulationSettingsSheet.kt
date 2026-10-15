@@ -228,52 +228,7 @@ fun SimulationSettingsSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Phone Breathing Vibration Simulation Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Vibration,
-                            contentDescription = null,
-                            tint = Color(0xFFA78BFA)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Giả lập Rung Đếm Nhịp Thở Thật",
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFA78BFA)
-                        )
-                    }
-                    Text(
-                        text = "Tạo xung rung nhẹ chu kỳ nhịp thở hoặc nhịp bước chân giúp bạn cảm nhận tự nhiên và chân thật trong hành trình dài.",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
-                    )
 
-                    VibrationCadence.values().forEach { cadence ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            FilterChip(
-                                selected = config.vibrationPattern == cadence,
-                                onClick = { onConfigChange(config.copy(vibrationPattern = cadence)) },
-                                label = { Text(cadence.label) },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
 
             // Heart Rate Simulation Card
             Card(
@@ -384,24 +339,7 @@ fun SimulationSettingsSheet(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
 
-                        // Heartbeat Vibration Switch
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Rung điện thoại theo nhịp tim (Haptic)", color = Color.White, fontSize = 13.sp)
-                                Text("Mỗi nhịp tim đập máy sẽ rung thình thịch kép theo đúng BPM", color = Color(0xFF94A3B8), fontSize = 11.sp)
-                            }
-                            Switch(
-                                checked = config.enableHeartbeatVibration,
-                                onCheckedChange = { onConfigChange(config.copy(enableHeartbeatVibration = it)) },
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFF43F5E))
-                            )
-                        }
                     }
                 }
             }

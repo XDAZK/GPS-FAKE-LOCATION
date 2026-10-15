@@ -36,24 +36,23 @@ data class SimulationConfig(
     val enableRandomPause: Boolean = true, // Random rest at waypoints
     val minPauseSeconds: Int = 5,
     val maxPauseSeconds: Int = 20,
-    val enableBreathingVibration: Boolean = true, // Phone vibration synced to breathing/footsteps
-    val vibrationPattern: VibrationCadence = VibrationCadence.BREATHING_RELAXED,
+    val enableBreathingVibration: Boolean = false,
+    val vibrationPattern: VibrationCadence = VibrationCadence.OFF,
     val loopRoute: Boolean = false,
     val isolateRealLocation: Boolean = true, // Override both GPS & Network
     // Heart Rate Simulation features
     val enableHeartRateSimulation: Boolean = true,
     val heartRateMode: HeartRateMode = HeartRateMode.AUTO_BY_SPEED,
     val customHeartRateBpm: Int = 135,
-    val enableHeartbeatVibration: Boolean = false, // Haptic heartbeat pulsing
+    val enableHeartbeatVibration: Boolean = false,
     val enableHrvFluctuation: Boolean = true, // Natural Heart Rate Variability ±2-4 BPM
     // Cadence & Calories & Steps
     val enableCadenceSimulation: Boolean = true,
     val autoCadenceBySpeed: Boolean = true,
     val manualCadenceSpm: Int = 165,
     val userWeightKg: Float = 68f,
-    // Mechanical step shockwave trigger (stimulates hardware accelerometer so tracking apps count steps without shaking)
-    val enablePhysicalStepVibration: Boolean = true,
-    val stepVibrationStrength: Int = 255
+    val enablePhysicalStepVibration: Boolean = false,
+    val stepVibrationStrength: Int = 0
 )
 
 enum class VibrationCadence(val label: String, val inhaleMs: Long, val exhaleMs: Long) {

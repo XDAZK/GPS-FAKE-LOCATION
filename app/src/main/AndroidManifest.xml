@@ -44,12 +44,6 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <!-- Overlay Floating Window Joystick Service -->
-        <service
-            android:name=".service.FloatingJoystickService"
-            android:exported="false"
-            android:foregroundServiceType="location" />
-
     </application>
 
 </manifest>

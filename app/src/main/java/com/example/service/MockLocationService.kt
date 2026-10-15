@@ -16,11 +16,9 @@ import com.example.data.model.GeoPoint
 import com.example.data.model.SimulationConfig
 import com.example.data.model.SimulationProgress
 import com.example.data.model.SimulationStatus
-import com.example.data.model.VibrationCadence
 import com.example.util.CadenceCalculator
 import com.example.util.GeoUtils
 import com.example.util.HeartRateSimulator
-import com.example.util.VibrationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,12 +34,8 @@ class MockLocationService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
     private var simulationJob: Job? = null
-    private var vibrationJob: Job? = null
-    private var heartbeatJob: Job? = null
-    private var stepShockwaveJob: Job? = null
 
     private lateinit var mockLocationManager: MockLocationManager
-    private lateinit var vibrationHelper: VibrationHelper
     private lateinit var heartRateSimulator: HeartRateSimulator
     private lateinit var notificationManager: NotificationManager
 
@@ -87,7 +81,6 @@ class MockLocationService : Service() {
     override fun onCreate() {
         super.onCreate()
         mockLocationManager = MockLocationManager(this)
-        vibrationHelper = VibrationHelper(this)
         heartRateSimulator = HeartRateSimulator(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
@@ -125,7 +118,6 @@ class MockLocationService : Service() {
             }
             ACTION_UPDATE_CONFIG -> {
                 // Config already updated via static StateFlow
-                restartVibrationIfActive()
             }
         }
 
@@ -245,10 +237,6 @@ class MockLocationService : Service() {
             isMockActive = true
         )
 
-        if (config.enablePhysicalStepVibration) {
-            vibrationHelper.pulseStepShockwave(config.stepVibrationStrength)
-        }
-
         val notification = buildNotification(
             title = "GeoSim: Cần điều khiển • ❤️ ${currentBpm} BPM",
             content = "Tốc độ: ${speedKmh.toInt()} km/h | 👟 ${currentCadence} SPM | 🔥 ${accumulatedCalories.toInt()} kcal"
@@ -261,13 +249,6 @@ class MockLocationService : Service() {
         mockLocationManager.startMocking(config.isolateRealLocation)
 
         simulationJob?.cancel()
-        vibrationJob?.cancel()
-
-        if (config.speedKmh > 0.5f && config.enablePhysicalStepVibration) {
-            startPhysicalStepShockwaveIfEnabled()
-        } else {
-            stepShockwaveJob?.cancel()
-        }
 
         val notification = buildNotification(
             title = "GeoSim: Đang giữ vị trí cố định",
@@ -322,9 +303,6 @@ class MockLocationService : Service() {
         mockLocationManager.startMocking(config.isolateRealLocation)
 
         simulationJob?.cancel()
-        startBreathingVibration(config.vibrationPattern)
-        startHeartbeatHapticIfEnabled(config)
-        startPhysicalStepShockwaveIfEnabled()
 
         val initialBpm = heartRateSimulator.calculateBpm(config.speedKmh, isResting = false, config = config)
         val initialNotif = buildNotification(
@@ -497,11 +475,8 @@ class MockLocationService : Service() {
 
     private fun pauseSimulation() {
         simulationJob?.cancel()
-        vibrationJob?.cancel()
-        stepShockwaveJob?.cancel()
         _simulationProgress.value = _simulationProgress.value.copy(status = SimulationStatus.PAUSED)
 
-        val currentPoint = _simulationProgress.value.currentPoint
         val percent = _simulationProgress.value.progressPercent
         val notif = buildNotification(
             title = "GeoSim: Đã tạm dừng",
@@ -516,92 +491,8 @@ class MockLocationService : Service() {
         startRouteSimulation()
     }
 
-    private fun startPhysicalStepShockwaveIfEnabled() {
-        stepShockwaveJob?.cancel()
-        val config = _activeConfig.value
-        if (!config.enablePhysicalStepVibration) return
-
-        stepShockwaveJob = serviceScope.launch {
-            while (isActive) {
-                val currentConfig = _activeConfig.value
-                if (!currentConfig.enablePhysicalStepVibration) break
-                val progress = _simulationProgress.value
-                val isMoving = progress.currentSpeedKmh > 0.5f || progress.status == SimulationStatus.RUNNING
-                if (!isMoving) {
-                    delay(300L)
-                    continue
-                }
-
-                val targetSpm = if (progress.currentCadenceSpm > 0) {
-                    progress.currentCadenceSpm
-                } else {
-                    CadenceCalculator.calculateCadence(progress.currentSpeedKmh.coerceAtLeast(currentConfig.speedKmh), false, currentConfig)
-                }.coerceIn(80, 220)
-
-                val intervalMs = (60000L / targetSpm).coerceIn(260L, 750L)
-
-                vibrationHelper.pulseStepShockwave(currentConfig.stepVibrationStrength)
-                delay(intervalMs)
-            }
-        }
-    }
-
-    private fun startBreathingVibration(cadence: VibrationCadence) {
-        vibrationJob?.cancel()
-        if (cadence == VibrationCadence.OFF) return
-
-        vibrationJob = serviceScope.launch {
-            while (isActive) {
-                val currentCadence = _activeConfig.value.vibrationPattern
-                if (currentCadence == VibrationCadence.OFF) break
-
-                vibrationHelper.pulseBreathing(currentCadence)
-                delay(currentCadence.inhaleMs)
-
-                if (!isActive) break
-                vibrationHelper.pulseBreathing(currentCadence)
-                delay(currentCadence.exhaleMs)
-            }
-        }
-    }
-
-    private fun startHeartbeatHapticIfEnabled(config: SimulationConfig) {
-        heartbeatJob?.cancel()
-        if (!config.enableHeartbeatVibration) return
-
-        heartbeatJob = serviceScope.launch {
-            while (isActive) {
-                val currentConfig = _activeConfig.value
-                if (!currentConfig.enableHeartbeatVibration) break
-
-                val bpm = _simulationProgress.value.currentHeartRateBpm.coerceIn(40, 220)
-                heartRateSimulator.pulseHeartbeat()
-
-                val beatIntervalMs = (60000L / bpm).coerceAtLeast(300L)
-                delay(beatIntervalMs)
-            }
-        }
-    }
-
-    private fun restartVibrationIfActive() {
-        val config = _activeConfig.value
-        if (_simulationProgress.value.status == SimulationStatus.RUNNING) {
-            startBreathingVibration(config.vibrationPattern)
-            startHeartbeatHapticIfEnabled(config)
-            startPhysicalStepShockwaveIfEnabled()
-        } else {
-            vibrationJob?.cancel()
-            heartbeatJob?.cancel()
-            stepShockwaveJob?.cancel()
-        }
-    }
-
     private fun stopMockingService() {
         simulationJob?.cancel()
-        vibrationJob?.cancel()
-        heartbeatJob?.cancel()
-        stepShockwaveJob?.cancel()
-        vibrationHelper.stop()
         mockLocationManager.stopMocking()
 
         _simulationProgress.value = SimulationProgress(
