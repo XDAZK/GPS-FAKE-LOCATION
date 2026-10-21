@@ -104,22 +104,20 @@ fun NativeOsmdroidMapView(
 
     val tileSources = remember {
         listOf(
-            "Chi tiết (CartoDB)" to XYTileSource(
-                "CartoDB Voyager",
+            "Bản đồ chuẩn (OSM)" to TileSourceFactory.MAPNIK,
+            "Bản đồ chi tiết (HOT)" to XYTileSource(
+                "OSM HOT",
                 0,
-                20,
+                19,
                 256,
                 ".png",
                 arrayOf(
-                    "https://a.basemaps.cartocdn.com/rastertiles/voyager/",
-                    "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
-                    "https://c.basemaps.cartocdn.com/rastertiles/voyager/",
-                    "https://d.basemaps.cartocdn.com/rastertiles/voyager/"
+                    "https://a.tile.openstreetmap.fr/hot/",
+                    "https://b.tile.openstreetmap.fr/hot/"
                 ),
-                "© OpenStreetMap contributors, © CARTO"
+                "© OpenStreetMap contributors, Humanitarian OpenStreetMap Team"
             ),
-            "Đường phố (OSM)" to TileSourceFactory.MAPNIK,
-            "Địa hình (TOPO)" to TileSourceFactory.OpenTopo
+            "Bản đồ địa hình (TOPO)" to TileSourceFactory.OpenTopo
         )
     }
 
