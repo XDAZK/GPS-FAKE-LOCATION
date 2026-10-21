@@ -129,10 +129,13 @@ fun MapScreen(
                 .align(Alignment.TopCenter)
                 .padding(top = 10.dp)
         ) {
+            val isBatteryIgnored by viewModel.isBatteryOptimizationIgnored.collectAsState()
             DevModeBanner(
                 isDevModeEnabled = isDevModeEnabled,
                 isMockPermitted = isMockPermitted,
-                onRefreshCheck = { viewModel.refreshDevStatus() }
+                onRefreshCheck = { viewModel.refreshDevStatus() },
+                isBatteryOptimizationIgnored = isBatteryIgnored,
+                onRequestIgnoreBatteryOptimization = { viewModel.requestIgnoreBatteryOptimization() }
             )
 
             // Location Bar Card

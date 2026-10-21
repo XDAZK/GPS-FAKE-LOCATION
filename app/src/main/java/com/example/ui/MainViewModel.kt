@@ -90,6 +90,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
 
+    private val _isBatteryOptimizationIgnored = MutableStateFlow(true)
+    val isBatteryOptimizationIgnored: StateFlow<Boolean> = _isBatteryOptimizationIgnored.asStateFlow()
+
     init {
         refreshDevStatus()
         fetchRealLocation(moveToCenter = true, showFeedback = false)
@@ -106,6 +109,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshDevStatus() {
         _isDevModeEnabled.value = mockLocationManager.isDeveloperOptionsEnabled()
         _isMockPermitted.value = mockLocationManager.isMockLocationPermitted()
+        checkBatteryOptimization()
+    }
+
+    fun checkBatteryOptimization() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            val pm = getApplication<Application>().getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+            _isBatteryOptimizationIgnored.value = pm?.isIgnoringBatteryOptimizations(getApplication<Application>().packageName) ?: true
+        } else {
+            _isBatteryOptimizationIgnored.value = true
+        }
+    }
+
+    fun requestIgnoreBatteryOptimization() {
+        val context = getApplication<Application>()
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        }
     }
 
     fun selectLocation(lat: Double, lng: Double, name: String = "") {

@@ -1,5 +1,6 @@
 package com.example.service
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.location.Location
@@ -10,11 +11,31 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import com.example.data.model.GeoPoint
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
 
+/**
+ * Enterprise-grade Mock Location Manager modeled after Sriharan-S/elsewhere.
+ *
+ * Implements 3-layer protection against location leakage:
+ * 1. LocationManager.GPS_PROVIDER test provider
+ * 2. LocationManager.NETWORK_PROVIDER test provider
+ * 3. LocationManager.FUSED_PROVIDER (Android 12+ API 31+) test provider
+ * 4. Google Play Services FusedLocationProviderClient (fusedClient.setMockMode(true) + setMockLocation)
+ *    which intercepts location for Google Maps, Grab, Strava, Banking, and social apps!
+ */
 class MockLocationManager(private val context: Context) {
 
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private val activeProviders = mutableSetOf<String>()
+
+    /**
+     * Google Play Services fused client, which most modern apps read through.
+     * Putting it in mock mode prevents Wi-Fi and cell tower real fixes from bleeding through!
+     */
+    private val fusedClient: FusedLocationProviderClient by lazy {
+        LocationServices.getFusedLocationProviderClient(context)
+    }
 
     /**
      * Check if Mock Location permission is granted or if Developer mode is active
@@ -59,19 +80,25 @@ class MockLocationManager(private val context: Context) {
     }
 
     /**
-     * Initialize test providers for GPS and optionally Network provider
+     * Initialize test providers for GPS, Network, and Fused (Android 12+)
+     * and put Google Play Services Fused Provider into Mock Mode.
      */
+    @SuppressLint("MissingPermission")
     fun startMocking(isolateRealLocation: Boolean = true): Boolean {
-        val providers = if (isolateRealLocation) {
-            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        } else {
-            listOf(LocationManager.GPS_PROVIDER)
+        val providers = buildList {
+            add(LocationManager.GPS_PROVIDER)
+            if (isolateRealLocation) {
+                add(LocationManager.NETWORK_PROVIDER)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                add(LocationManager.FUSED_PROVIDER)
+            }
         }
 
         var success = true
         for (provider in providers) {
             try {
-                // If previously registered, remove first to clean state
+                // If previously registered, clean first
                 try {
                     locationManager.removeTestProvider(provider)
                 } catch (_: Exception) {}
@@ -91,20 +118,29 @@ class MockLocationManager(private val context: Context) {
                 locationManager.setTestProviderEnabled(provider, true)
                 activeProviders.add(provider)
             } catch (e: Exception) {
+                // If permission missing or provider restricted
                 success = false
             }
         }
+
+        // Put Google Play Services Fused Location Client in Mock Mode
+        try {
+            fusedClient.setMockMode(true)
+        } catch (_: Exception) {}
+
         return success
     }
 
     /**
-     * Push simulated mock location to all active test providers with realistic metadata
+     * Push simulated mock location to all active test providers AND Google Play Services
+     * at high frequency so real location NEVER bleeds through between ticks.
      */
+    @SuppressLint("MissingPermission")
     fun pushMockLocation(
         geoPoint: GeoPoint,
         speedKmh: Float,
         bearing: Float,
-        accuracyMeters: Float = 3.2f,
+        accuracyMeters: Float = 1.0f,
         caloriesKcal: Double = 0.0,
         steps: Long = 0L
     ) {
@@ -114,54 +150,38 @@ class MockLocationManager(private val context: Context) {
 
         for (provider in activeProviders) {
             try {
-                val mockLocation = Location(provider).apply {
-                    latitude = geoPoint.latitude
-                    longitude = geoPoint.longitude
-                    altitude = geoPoint.altitude
-                    speed = speedMps
-                    this.bearing = bearing
-                    accuracy = accuracyMeters
-                    time = timeNow
-                    elapsedRealtimeNanos = elapsedNanos
-
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        bearingAccuracyDegrees = 1.5f
-                        speedAccuracyMetersPerSecond = 0.5f
-                        verticalAccuracyMeters = 2.0f
-                    }
-
-                    // Attach realistic mock satellite & fitness telemetry in Extras
-                    val extras = Bundle().apply {
-                        putInt("satellites", 14) // Mimic 14 active GPS+GLONASS satellites
-                        putFloat("maxCn0", 38.5f)
-                        putFloat("meanCn0", 31.0f)
-                        // Fitness telemetry for fitness & tracker apps
-                        if (geoPoint.heartRate > 0) {
-                            putInt("heart_rate", geoPoint.heartRate)
-                            putInt("heartRate", geoPoint.heartRate)
-                            putInt("bpm", geoPoint.heartRate)
-                        }
-                        if (geoPoint.cadence > 0) {
-                            putInt("cadence", geoPoint.cadence)
-                            putInt("spm", geoPoint.cadence)
-                        }
-                        if (caloriesKcal > 0.0) {
-                            putFloat("calories", caloriesKcal.toFloat())
-                        }
-                        if (steps > 0L) {
-                            putLong("step_count", steps)
-                            putLong("steps", steps)
-                        }
-                        putFloat("speed_kmh", speedKmh)
-                    }
-                    this.extras = extras
-                }
-
+                val mockLocation = buildLocation(
+                    provider = provider,
+                    geoPoint = geoPoint,
+                    speedMps = speedMps,
+                    bearing = bearing,
+                    accuracyMeters = accuracyMeters,
+                    timeNow = timeNow,
+                    elapsedNanos = elapsedNanos,
+                    caloriesKcal = caloriesKcal,
+                    steps = steps,
+                    speedKmh = speedKmh
+                )
                 locationManager.setTestProviderLocation(provider, mockLocation)
-            } catch (_: Exception) {
-                // Ignore transient provider exceptions
-            }
+            } catch (_: Exception) {}
         }
+
+        // Push to Google Play Services Fused Location Provider Client
+        try {
+            val fusedLocation = buildLocation(
+                provider = "fused",
+                geoPoint = geoPoint,
+                speedMps = speedMps,
+                bearing = bearing,
+                accuracyMeters = accuracyMeters,
+                timeNow = timeNow,
+                elapsedNanos = elapsedNanos,
+                caloriesKcal = caloriesKcal,
+                steps = steps,
+                speedKmh = speedKmh
+            )
+            fusedClient.setMockLocation(fusedLocation)
+        } catch (_: Exception) {}
 
         // Broadcast standard fitness event for other running services / receivers
         try {
@@ -178,9 +198,63 @@ class MockLocationManager(private val context: Context) {
         } catch (_: Exception) {}
     }
 
+    private fun buildLocation(
+        provider: String,
+        geoPoint: GeoPoint,
+        speedMps: Float,
+        bearing: Float,
+        accuracyMeters: Float,
+        timeNow: Long,
+        elapsedNanos: Long,
+        caloriesKcal: Double,
+        steps: Long,
+        speedKmh: Float
+    ): Location {
+        return Location(provider).apply {
+            latitude = geoPoint.latitude
+            longitude = geoPoint.longitude
+            altitude = geoPoint.altitude
+            speed = speedMps
+            this.bearing = bearing
+            accuracy = accuracyMeters
+            time = timeNow
+            elapsedRealtimeNanos = elapsedNanos
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                bearingAccuracyDegrees = 0.5f
+                speedAccuracyMetersPerSecond = 0.2f
+                verticalAccuracyMeters = 1.0f
+            }
+
+            val extras = Bundle().apply {
+                putInt("satellites", 16)
+                putFloat("maxCn0", 42.0f)
+                putFloat("meanCn0", 35.0f)
+                if (geoPoint.heartRate > 0) {
+                    putInt("heart_rate", geoPoint.heartRate)
+                    putInt("bpm", geoPoint.heartRate)
+                }
+                if (geoPoint.cadence > 0) {
+                    putInt("cadence", geoPoint.cadence)
+                    putInt("spm", geoPoint.cadence)
+                }
+                if (caloriesKcal > 0.0) {
+                    putFloat("calories", caloriesKcal.toFloat())
+                }
+                if (steps > 0L) {
+                    putLong("step_count", steps)
+                    putLong("steps", steps)
+                }
+                putFloat("speed_kmh", speedKmh)
+            }
+            this.extras = extras
+        }
+    }
+
     /**
-     * Clean up and remove test providers
+     * Clean up, remove test providers, and release Google Play Services mock mode
      */
+    @SuppressLint("MissingPermission")
     fun stopMocking() {
         for (provider in activeProviders) {
             try {
@@ -189,5 +263,9 @@ class MockLocationManager(private val context: Context) {
             } catch (_: Exception) {}
         }
         activeProviders.clear()
+
+        try {
+            fusedClient.setMockMode(false)
+        } catch (_: Exception) {}
     }
 }

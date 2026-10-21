@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
@@ -34,6 +35,7 @@ class MockLocationService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + Job())
     private var simulationJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private lateinit var mockLocationManager: MockLocationManager
     private lateinit var heartRateSimulator: HeartRateSimulator
@@ -86,15 +88,56 @@ class MockLocationService : Service() {
         createNotificationChannel()
     }
 
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GeoSim::MockLocationWakeLock").apply {
+                    setReferenceCounted(false)
+                }
+            }
+            if (wakeLock?.isHeld == false) {
+                wakeLock?.acquire(24 * 60 * 60 * 1000L) // up to 24h
+            }
+        } catch (_: Exception) {}
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (_: Exception) {}
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action ?: return START_NOT_STICKY
+        if (intent == null) {
+            // Android OS restarted the service after low-memory kill (START_STICKY).
+            // Resume the persisted active mock command instead of stopping!
+            val savedPoint = MockStateStore.getActivePoint(this)
+            if (savedPoint != null) {
+                if (MockStateStore.isRouteActive(this) && _routeWaypoints.value.size >= 2) {
+                    startRouteSimulation()
+                } else {
+                    startMockingSinglePoint(savedPoint)
+                }
+                return START_STICKY
+            } else {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
+        val action = intent.action ?: return START_NOT_STICKY
 
         when (action) {
             ACTION_START_POINT -> {
                 val lat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
                 val lng = intent.getDoubleExtra(EXTRA_LNG, 0.0)
                 val name = intent.getStringExtra(EXTRA_NAME) ?: "Vị trí đã chọn"
-                startMockingSinglePoint(GeoPoint(lat, lng, name = name))
+                val point = GeoPoint(lat, lng, name = name)
+                MockStateStore.setActivePoint(this, point, isRoute = false)
+                startMockingSinglePoint(point)
             }
             ACTION_NUDGE_LOCATION -> {
                 val lat = intent.getDoubleExtra(EXTRA_LAT, 0.0)
@@ -122,6 +165,12 @@ class MockLocationService : Service() {
         }
 
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // User swiped the app away from Recent Apps:
+        // Intentionally keep MockLocationService running in the background!
     }
 
     private fun createNotificationChannel() {
@@ -245,6 +294,7 @@ class MockLocationService : Service() {
     }
 
     private fun startMockingSinglePoint(point: GeoPoint) {
+        acquireWakeLock()
         val config = _activeConfig.value
         mockLocationManager.startMocking(config.isolateRealLocation)
 
@@ -290,12 +340,14 @@ class MockLocationService : Service() {
                     caloriesBurnedKcal = accumulatedCalories,
                     isMockActive = true
                 )
-                delay(1000L)
+                // 250ms high frequency like elsewhere (ensures real GPS fix never surfaces in cache)
+                delay(250L)
             }
         }
     }
 
     private fun startRouteSimulation() {
+        acquireWakeLock()
         val waypoints = _routeWaypoints.value
         if (waypoints.size < 2) return
 
@@ -493,6 +545,8 @@ class MockLocationService : Service() {
 
     private fun stopMockingService() {
         simulationJob?.cancel()
+        releaseWakeLock()
+        MockStateStore.clearActive(this)
         mockLocationManager.stopMocking()
 
         _simulationProgress.value = SimulationProgress(
@@ -506,6 +560,8 @@ class MockLocationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        releaseWakeLock()
+        MockStateStore.clearActive(this)
         stopMockingService()
         serviceScope.cancel()
     }

@@ -50,6 +50,8 @@ fun DevModeBanner(
     isDevModeEnabled: Boolean,
     isMockPermitted: Boolean,
     onRefreshCheck: () -> Unit,
+    isBatteryOptimizationIgnored: Boolean = true,
+    onRequestIgnoreBatteryOptimization: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -106,6 +108,54 @@ fun DevModeBanner(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = "Xem",
                     tint = Color(0xFFFDE68A)
+                )
+            }
+        }
+    }
+
+    AnimatedVisibility(visible = !needsAttention && !isBatteryOptimizationIgnored, modifier = modifier) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF1E1B4B), // Deep indigo
+                contentColor = Color(0xFFE0E7FF)
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .clickable { onRequestIgnoreBatteryOptimization() }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("⚡", fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = "Pin đang bị giới hạn chạy nền",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFA5B4FC),
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            text = "Nhấn để bật 'Không hạn chế' giúp giữ nền 24/7 không bao giờ tắt",
+                            color = Color(0xFFC7D2FE),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = Color(0xFFA5B4FC)
                 )
             }
         }
