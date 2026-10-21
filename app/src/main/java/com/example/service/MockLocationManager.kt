@@ -39,26 +39,26 @@ class MockLocationManager(private val context: Context) {
 
     /**
      * Check if Mock Location permission is granted or if Developer mode is active
+     * Using AppOpsManager to avoid destructive addTestProvider/removeTestProvider calls.
      */
     fun isMockLocationPermitted(): Boolean {
         return try {
-            val provider = LocationManager.GPS_PROVIDER
-            locationManager.addTestProvider(
-                provider,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                true,
-                ProviderProperties.POWER_USAGE_LOW,
-                ProviderProperties.ACCURACY_FINE
-            )
-            locationManager.removeTestProvider(provider)
-            true
-        } catch (_: SecurityException) {
-            false
+            val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_MOCK_LOCATION,
+                    android.os.Process.myUid(),
+                    context.packageName
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_MOCK_LOCATION,
+                    android.os.Process.myUid(),
+                    context.packageName
+                )
+            }
+            mode == android.app.AppOpsManager.MODE_ALLOWED
         } catch (_: Exception) {
             false
         }

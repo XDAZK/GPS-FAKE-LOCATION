@@ -65,6 +65,7 @@ import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
@@ -101,10 +102,26 @@ fun NativeOsmdroidMapView(
     var centerLng by remember { mutableDoubleStateOf(currentPoint?.longitude ?: 105.854444) }
     var currentTileSourceIndex by remember { mutableStateOf(0) }
 
-    val tileSources = listOf(
-        "Chuẩn (MAPNIK)" to TileSourceFactory.MAPNIK,
-        "Vệ tinh / Địa hình (TOPO)" to TileSourceFactory.OpenTopo
-    )
+    val tileSources = remember {
+        listOf(
+            "Chi tiết (CartoDB)" to XYTileSource(
+                "CartoDB Voyager",
+                0,
+                20,
+                256,
+                ".png",
+                arrayOf(
+                    "https://a.basemaps.cartocdn.com/rastertiles/voyager/",
+                    "https://b.basemaps.cartocdn.com/rastertiles/voyager/",
+                    "https://c.basemaps.cartocdn.com/rastertiles/voyager/",
+                    "https://d.basemaps.cartocdn.com/rastertiles/voyager/"
+                ),
+                "© OpenStreetMap contributors, © CARTO"
+            ),
+            "Đường phố (OSM)" to TileSourceFactory.MAPNIK,
+            "Địa hình (TOPO)" to TileSourceFactory.OpenTopo
+        )
+    }
 
     // Manage lifecycle of MapView (onResume / onPause)
     DisposableEffect(lifecycleOwner) {
@@ -140,6 +157,15 @@ fun NativeOsmdroidMapView(
         // Native Osmdroid MapView wrapped in AndroidView
         AndroidView(
             factory = { ctx ->
+                // Ensure Osmdroid configuration is fully loaded with userAgentValue and cache paths
+                val osmConfig = org.osmdroid.config.Configuration.getInstance()
+                osmConfig.load(ctx, ctx.getSharedPreferences("osmdroid_prefs", Context.MODE_PRIVATE))
+                osmConfig.userAgentValue = "GeoSim-GPS-Mock/2.0 (Android; ${ctx.packageName})"
+                val osmBasePath = java.io.File(ctx.cacheDir, "osmdroid").apply { mkdirs() }
+                val osmTileCache = java.io.File(osmBasePath, "tiles").apply { mkdirs() }
+                osmConfig.osmdroidBasePath = osmBasePath
+                osmConfig.osmdroidTileCache = osmTileCache
+
                 MapView(ctx).apply {
                     setTileSource(tileSources[currentTileSourceIndex].second)
                     setMultiTouchControls(true)
@@ -150,6 +176,9 @@ fun NativeOsmdroidMapView(
 
                     val initPt = currentPoint ?: GeoPoint(21.028511, 105.854444)
                     controller.setCenter(org.osmdroid.util.GeoPoint(initPt.latitude, initPt.longitude))
+
+                    // Start tile downloading immediately
+                    onResume()
 
                     // Map scroll & zoom listener (updates center coordinates)
                     addMapListener(object : MapListener {

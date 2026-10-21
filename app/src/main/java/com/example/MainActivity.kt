@@ -70,11 +70,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // Initialize OpenStreetMap Osmdroid Configuration
-        org.osmdroid.config.Configuration.getInstance().userAgentValue = packageName
-        org.osmdroid.config.Configuration.getInstance().load(
-            this,
-            getSharedPreferences("osmdroid", MODE_PRIVATE)
-        )
+        val osmConfig = org.osmdroid.config.Configuration.getInstance()
+        osmConfig.load(this, getSharedPreferences("osmdroid_prefs", MODE_PRIVATE))
+        // Set valid custom userAgentValue AFTER load() so OpenStreetMap tile servers allow downloads
+        osmConfig.userAgentValue = "GeoSim-GPS-Mock/2.0 (Android; ${packageName})"
+        val osmBasePath = java.io.File(cacheDir, "osmdroid").apply { mkdirs() }
+        val osmTileCache = java.io.File(osmBasePath, "tiles").apply { mkdirs() }
+        osmConfig.osmdroidBasePath = osmBasePath
+        osmConfig.osmdroidTileCache = osmTileCache
 
         setContent {
             MyApplicationTheme {
