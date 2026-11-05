@@ -134,4 +134,47 @@ class FitExporterTest {
         val fileCrc = ((bytes[bytes.size - 1].toInt() and 0xFF) shl 8) or (bytes[bytes.size - 2].toInt() and 0xFF)
         assertEquals(calculatedCrc, fileCrc)
     }
+
+    @Test
+    fun testDynamicPacingAndHeartRateSwing() {
+        val points = listOf(
+            GeoPoint(latitude = 10.859323, longitude = 106.768547),
+            GeoPoint(latitude = 10.865323, longitude = 106.774547)
+        )
+        val bytes = FitExporter.generateFitBinary(points = points, speedKmh = 10.9f) // Pace 5:30
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+
+        var recordDataStart = -1
+        for (i in 14 until bytes.size - 30) {
+            if (bytes[i] == 0x42.toByte() && bytes[i + 3] == 0x14.toByte()) {
+                recordDataStart = i + 30
+                break
+            }
+        }
+        assertTrue(recordDataStart > 0)
+
+        var minHr = 300
+        var maxHr = 0
+        var minSpeed = 100.0
+        var maxSpeed = 0.0
+
+        var offset = recordDataStart
+        while (offset + 23 <= bytes.size && bytes[offset] == 0x02.toByte()) {
+            val hr = bytes[offset + 15].toInt() and 0xFF
+            if (hr < minHr) minHr = hr
+            if (hr > maxHr) maxHr = hr
+
+            val speedScaled = buffer.getShort(offset + 21).toInt() and 0xFFFF
+            val spd = speedScaled / 1000.0
+            if (spd < minSpeed) minSpeed = spd
+            if (spd > maxSpeed) maxSpeed = spd
+
+            offset += 23
+        }
+
+        // Heart rate must oscillate with significant physiological swing (> 10 BPM difference)
+        assertTrue("Heart rate swing must be >= 10 BPM (min=$minHr, max=$maxHr)", (maxHr - minHr) >= 10)
+        // Speed must not be completely flat (must have interval variance)
+        assertTrue("Speed must have interval variance (min=$minSpeed, max=$maxSpeed)", (maxSpeed - minSpeed) > 0.3)
+    }
 }

@@ -30,8 +30,9 @@ enum class HeartRateMode(val title: String, val minBpm: Int, val maxBpm: Int, va
 }
 
 data class SimulationConfig(
-    val speedKmh: Float = 25f, // Speed in km/h
-    val enableNaturalSpeedVariance: Boolean = true, // ±5-8% human speed variance
+    val speedKmh: Float = 10.9f, // Default Pace 5:30 min/km (~10.9 km/h)
+    val enableNaturalSpeedVariance: Boolean = true, // Natural human speed variance
+    val enableIntervalPaceShifting: Boolean = true, // Dynamic interval shifts (warmup, surge, cruise, recovery)
     val enableGpsJitter: Boolean = true, // 1-2m natural GPS drift
     val enableRandomPause: Boolean = true, // Random rest at waypoints
     val minPauseSeconds: Int = 5,
@@ -45,7 +46,7 @@ data class SimulationConfig(
     val heartRateMode: HeartRateMode = HeartRateMode.AUTO_BY_SPEED,
     val customHeartRateBpm: Int = 135,
     val enableHeartbeatVibration: Boolean = false,
-    val enableHrvFluctuation: Boolean = true, // Natural Heart Rate Variability ±2-4 BPM
+    val enableHrvFluctuation: Boolean = true, // Natural Heart Rate Variability
     // Cadence & Calories & Steps
     val enableCadenceSimulation: Boolean = true,
     val autoCadenceBySpeed: Boolean = true,
@@ -53,7 +54,10 @@ data class SimulationConfig(
     val userWeightKg: Float = 68f,
     val enablePhysicalStepVibration: Boolean = false,
     val stepVibrationStrength: Int = 0
-)
+) {
+    val targetPaceMinPerKm: Double
+        get() = if (speedKmh > 0.1f) (60.0 / speedKmh).coerceIn(4.0, 15.0) else 6.0
+}
 
 enum class VibrationCadence(val label: String, val inhaleMs: Long, val exhaleMs: Long) {
     BREATHING_RELAXED("Nhịp thở 4-4s (Thư giãn)", 4000L, 4000L),
@@ -73,9 +77,11 @@ data class SimulationProgress(
     val currentCadenceSpm: Int = 0,
     val totalSteps: Long = 0L,
     val caloriesBurnedKcal: Double = 0.0,
+    val distanceCoveredMeters: Double = 0.0, // Tổng quãng đường đã chạy thực tế
     val remainingDistanceMeters: Double = 0.0,
     val remainingTimeSeconds: Long = 0,
     val pauseRemainingSeconds: Int = 0,
     val isMockActive: Boolean = false,
-    val isStepTriggerActive: Boolean = true
+    val isStepTriggerActive: Boolean = true,
+    val isLoopReversing: Boolean = false // Đang chạy ngược về (loop reverse)
 )

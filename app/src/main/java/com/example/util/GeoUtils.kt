@@ -73,6 +73,75 @@ object GeoUtils {
     }
 
     /**
+     * Convert speed in km/h to running pace in minutes per km (min/km)
+     */
+    fun speedKmhToPaceMinutes(speedKmh: Float): Double {
+        return if (speedKmh > 0.1f) (60.0 / speedKmh).coerceIn(4.0, 15.0) else 15.0
+    }
+
+    /**
+     * Convert running pace in minutes per km to speed in km/h
+     */
+    fun paceMinutesToSpeedKmh(paceMin: Double): Float {
+        return if (paceMin > 0.1) (60.0 / paceMin.coerceIn(4.0, 15.0)).toFloat() else 4.0f
+    }
+
+    /**
+     * Format speed as Pace string (e.g. "05:30 /km")
+     */
+    fun formatPace(speedKmh: Float): String {
+        if (speedKmh <= 0.5f) return "--:-- /km"
+        val paceSec = (3600.0 / speedKmh).toInt()
+        val m = paceSec / 60
+        val s = paceSec % 60
+        return String.format(java.util.Locale.US, "%02d:%02d /km", m, s)
+    }
+
+    fun formatPaceFromMinutes(paceMinutes: Double): String {
+        val totalSec = (paceMinutes * 60.0).toInt()
+        val m = totalSec / 60
+        val s = totalSec % 60
+        return String.format(java.util.Locale.US, "%02d:%02d /km", m, s)
+    }
+
+    /**
+     * Human-like running speed simulation that dynamically shifts pace across
+     * interval cycles (warmup, surge/pickup, steady cruise, ease/recovery)
+     * so that the speed never stays on a flat line.
+     */
+    fun getDynamicRunningSpeed(
+        baseSpeedKmh: Float,
+        secondsElapsed: Long,
+        enableVariance: Boolean = true
+    ): Float {
+        if (baseSpeedKmh <= 0.5f) return baseSpeedKmh
+        if (!enableVariance) return baseSpeedKmh
+
+        val t = secondsElapsed.toDouble()
+
+        // 1. Warmup transition in the first 45 seconds (starts at 82% and ramps to 100%)
+        val warmupFactor = if (t < 45.0) {
+            0.82 + 0.18 * (t / 45.0)
+        } else {
+            1.0
+        }
+
+        // 2. Macro Interval Wave (period ~75s, amplitude ±15%): alternates between pickup and recovery
+        val intervalWave = sin(t * (2.0 * Math.PI / 75.0)) * 0.15
+
+        // 3. Secondary Wave (period ~31s, amplitude ±7%): short bursts / traffic & terrain checks
+        val shortBurstWave = cos(t * (2.0 * Math.PI / 31.0)) * 0.07
+
+        // 4. Cadence/Footstrike micro fluctuation (period ~7s, amplitude ±3%)
+        val strideMicroWave = sin(t * 0.9) * 0.03
+
+        val combinedFactor = (warmupFactor + intervalWave + shortBurstWave + strideMicroWave)
+            .coerceIn(0.68, 1.35)
+
+        return (baseSpeedKmh * combinedFactor).toFloat().coerceIn(3.0f, 22.0f)
+    }
+
+    /**
      * Fluctuates speed naturally by ±5% to ±8% to simulate human walking/driving
      */
     fun getHumanizedSpeed(baseSpeedKmh: Float, enable: Boolean): Float {

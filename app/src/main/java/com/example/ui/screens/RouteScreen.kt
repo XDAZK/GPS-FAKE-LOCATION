@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,11 +43,16 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -143,6 +150,7 @@ fun RouteScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
+                // Pace & Speed Header with Out-and-back Loop Toggle
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -151,12 +159,19 @@ fun RouteScreen(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Tốc độ: ${simulationConfig.speedKmh.toInt()} km/h",
+                                text = "Pace: ${GeoUtils.formatPace(simulationConfig.speedKmh)}",
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF38BDF8)
+                                color = Color(0xFF38BDF8),
+                                fontSize = 16.sp
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "(${String.format(java.util.Locale.US, "%.1f", simulationConfig.speedKmh)} km/h)",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
                             if (simulationConfig.enableHeartRateSimulation) {
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "• ❤️ ${simulationProgress.currentHeartRateBpm} BPM",
                                     fontWeight = FontWeight.Bold,
@@ -166,7 +181,7 @@ fun RouteScreen(
                             }
                         }
                         Text(
-                            text = "Ước tính di chuyển: ${GeoUtils.formatDuration(totalTimeSeconds)} • ${simulationConfig.heartRateMode.title}",
+                            text = "Ước tính di chuyển 1 lượt: ${GeoUtils.formatDuration(totalTimeSeconds)}",
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp
                         )
@@ -174,17 +189,183 @@ fun RouteScreen(
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "Lặp (Loop)",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            text = if (simulationConfig.loopRoute) "Loop (Đi-Về)" else "Chạy 1 lượt",
+                            color = if (simulationConfig.loopRoute) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Switch(
                             checked = simulationConfig.loopRoute,
                             onCheckedChange = { viewModel.updateConfig(simulationConfig.copy(loopRoute = it)) },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF38BDF8))
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Pace Slider (4:00 min/km to 15:00 min/km)
+                val currentPaceMin = GeoUtils.speedKmhToPaceMinutes(simulationConfig.speedKmh)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "4p/km",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = currentPaceMin.toFloat(),
+                        onValueChange = { paceMin ->
+                            val newSpeed = GeoUtils.paceMinutesToSpeedKmh(paceMin.toDouble())
+                            viewModel.updateConfig(simulationConfig.copy(speedKmh = newSpeed))
+                        },
+                        valueRange = 4.0f..15.0f,
+                        steps = 109,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 6.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF38BDF8),
+                            activeTrackColor = Color(0xFF0284C7),
+                            inactiveTrackColor = Color(0xFF334155)
+                        )
+                    )
+                    Text(
+                        text = "15p/km",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Quick Pace Presets Row (4:00 - 15:00 min/km)
+                androidx.compose.foundation.lazy.LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val presets = listOf(
+                        4.0 to "Pace 4:00",
+                        4.5 to "Pace 4:30",
+                        5.0 to "Pace 5:00",
+                        5.5 to "Pace 5:30",
+                        6.0 to "Pace 6:00",
+                        7.0 to "Pace 7:00",
+                        8.5 to "Pace 8:30",
+                        10.0 to "Pace 10:00",
+                        12.0 to "Pace 12:00",
+                        15.0 to "Pace 15:00"
+                    )
+                    items(presets) { (pMin, label) ->
+                        val isSelected = kotlin.math.abs(currentPaceMin - pMin) < 0.25
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                val newSpeed = GeoUtils.paceMinutesToSpeedKmh(pMin)
+                                viewModel.updateConfig(simulationConfig.copy(speedKmh = newSpeed))
+                            },
+                            label = { Text(label, fontSize = 10.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF0284C7),
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                // LIVE RUNNING STATS DASHBOARD (Shows while simulation is running or paused)
+                if (simulationProgress.status != SimulationStatus.IDLE) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        color = Color(0xFF0F172A),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (simulationProgress.status == SimulationStatus.RUNNING) Color(0xFF10B981) else Color(0xFFF59E0B))
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (simulationProgress.isLoopReversing) "ĐANG CHẠY CHIỀU VỀ (NGƯỢC)" else "ĐANG CHẠY CHIỀU ĐI (THUẬN)",
+                                        color = if (simulationProgress.isLoopReversing) Color(0xFFFBBF24) else Color(0xFF34D399),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = "Tiến độ: ${simulationProgress.progressPercent}%",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "TỔNG ĐÃ CHẠY",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = GeoUtils.formatDistance(simulationProgress.distanceCoveredMeters),
+                                        color = Color(0xFF34D399),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+
+                                Column {
+                                    Text(
+                                        text = "PACE TỨC THỜI",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = GeoUtils.formatPace(simulationProgress.currentSpeedKmh),
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+
+                                Column {
+                                    Text(
+                                        text = "NHỊP TIM DAO ĐỘNG",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "${simulationProgress.currentHeartRateBpm} BPM",
+                                        color = Color(0xFFF43F5E),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 

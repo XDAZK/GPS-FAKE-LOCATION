@@ -79,18 +79,39 @@ fun SimulationSettingsSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Speed Presets
-            Text(
-                text = "Tốc độ di chuyển: ${config.speedKmh.toInt()} km/h",
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFF38BDF8)
-            )
+            // Running Pace & Speed Presets (4:00 - 15:00 min/km)
+            val currentPaceMin = com.example.util.GeoUtils.speedKmhToPaceMinutes(config.speedKmh)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Nhịp độ chạy (Pace): ${com.example.util.GeoUtils.formatPace(config.speedKmh)}",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF38BDF8),
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        text = "Tương đương: ${String.format(java.util.Locale.US, "%.1f", config.speedKmh)} km/h • Dải tiêu chuẩn 4:00 - 15:00 min/km",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp
+                    )
+                }
+            }
 
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Pace slider from 4.0 min/km (fast 15 km/h) to 15.0 min/km (walking 4 km/h)
             Slider(
-                value = config.speedKmh,
-                onValueChange = { onConfigChange(config.copy(speedKmh = it)) },
-                valueRange = 1f..150f,
-                steps = 148,
+                value = currentPaceMin.toFloat(),
+                onValueChange = { paceMin ->
+                    val newSpeed = com.example.util.GeoUtils.paceMinutesToSpeedKmh(paceMin.toDouble())
+                    onConfigChange(config.copy(speedKmh = newSpeed))
+                },
+                valueRange = 4.0f..15.0f,
+                steps = 109,
                 colors = SliderDefaults.colors(
                     thumbColor = Color(0xFF38BDF8),
                     activeTrackColor = Color(0xFF0284C7),
@@ -98,30 +119,44 @@ fun SimulationSettingsSheet(
                 )
             )
 
-            Row(
+            // Quick Pace Preset Chips (Horizontal scrolling row)
+            androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                SpeedChip(label = "Đi bộ (4)", speed = 4f, currentSpeed = config.speedKmh) {
-                    onConfigChange(config.copy(speedKmh = 4f))
-                }
-                SpeedChip(label = "Chạy (10)", speed = 10f, currentSpeed = config.speedKmh) {
-                    onConfigChange(config.copy(speedKmh = 10f))
-                }
-                SpeedChip(label = "Xe đạp (20)", speed = 20f, currentSpeed = config.speedKmh) {
-                    onConfigChange(config.copy(speedKmh = 20f))
-                }
-                SpeedChip(label = "Xe máy (45)", speed = 45f, currentSpeed = config.speedKmh) {
-                    onConfigChange(config.copy(speedKmh = 45f))
-                }
-                SpeedChip(label = "Ô tô (80)", speed = 80f, currentSpeed = config.speedKmh) {
-                    onConfigChange(config.copy(speedKmh = 80f))
+                val pacePresets = listOf(
+                    4.0 to "Pace 4:00 (15 km/h)",
+                    4.5 to "Pace 4:30 (13.3 km/h)",
+                    5.0 to "Pace 5:00 (12 km/h)",
+                    5.5 to "Pace 5:30 (10.9 km/h)",
+                    6.0 to "Pace 6:00 (10 km/h)",
+                    7.0 to "Pace 7:00 (8.6 km/h)",
+                    8.5 to "Pace 8:30 (7.1 km/h)",
+                    10.0 to "Pace 10:00 (6 km/h)",
+                    12.0 to "Pace 12:00 (5 km/h)",
+                    15.0 to "Pace 15:00 (4 km/h)"
+                )
+                items(pacePresets.size) { idx ->
+                    val (pMin, label) = pacePresets[idx]
+                    val isSelected = kotlin.math.abs(currentPaceMin - pMin) < 0.25
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            val newSpeed = com.example.util.GeoUtils.paceMinutesToSpeedKmh(pMin)
+                            onConfigChange(config.copy(speedKmh = newSpeed))
+                        },
+                        label = { Text(label, fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF0284C7),
+                            selectedLabelColor = Color.White
+                        )
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Real Human Physics Card
+            // Real Human Physics & Dynamic Intervals Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                 shape = RoundedCornerShape(12.dp),
@@ -129,7 +164,7 @@ fun SimulationSettingsSheet(
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     Text(
-                        text = "Cơ chế Người thật & Ẩn dấu vết",
+                        text = "Biến thiên Tốc độ & Giai đoạn chạy (Interval)",
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF34D399),
                         fontSize = 15.sp
@@ -143,8 +178,26 @@ fun SimulationSettingsSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Biến thiên tốc độ tự nhiên", fontWeight = FontWeight.Medium, color = Color.White)
-                            Text("Tự động tăng giảm ±5-8% để không bị hệ thống AI phát hiện vận tốc máy móc", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                            Text("Đổi tốc độ theo chu kỳ (Interval)", fontWeight = FontWeight.Medium, color = Color.White)
+                            Text("Tự động tăng tốc (surge), duy trì (cruise) và thả lỏng (recovery) để biểu đồ tốc độ không bao giờ bị ngang mãi mãi", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = config.enableIntervalPaceShifting,
+                            onCheckedChange = { onConfigChange(config.copy(enableIntervalPaceShifting = it)) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF34D399))
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Biến thiên tốc độ tự nhiên vi mô", fontWeight = FontWeight.Medium, color = Color.White)
+                            Text("Tự động thêm dao động bước chạy ±5-8% mô phỏng lực chân người thật", color = Color(0xFF94A3B8), fontSize = 11.sp)
                         }
                         Switch(
                             checked = config.enableNaturalSpeedVariance,
@@ -458,8 +511,8 @@ fun SimulationSettingsSheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Lặp lại lộ trình liên tục (Loop)", fontWeight = FontWeight.SemiBold, color = Color.White)
-                    Text("Tự động quay lại điểm xuất phát và tiếp tục chạy", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    Text("Lặp lại lộ trình chạy ngược về (Loop Con Lắc)", fontWeight = FontWeight.SemiBold, color = Color.White)
+                    Text("Khi chạy tới điểm cuối sẽ tự động chạy ngược lại về điểm xuất phát (Out-and-Back), không bị dịch chuyển đột ngột.", color = Color(0xFF94A3B8), fontSize = 11.sp)
                 }
                 Switch(
                     checked = config.loopRoute,

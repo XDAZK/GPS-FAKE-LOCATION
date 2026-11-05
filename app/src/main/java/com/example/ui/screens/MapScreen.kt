@@ -564,8 +564,8 @@ fun MapScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = when (simulationProgress.status) {
-                                    SimulationStatus.RUNNING -> "Đang di chuyển (${simulationProgress.progressPercent}%)"
-                                    SimulationStatus.RESTING -> "Dừng nghỉ ngẫu nhiên: còn ${simulationProgress.pauseRemainingSeconds}s"
+                                    SimulationStatus.RUNNING -> if (simulationProgress.isLoopReversing) "Đang chạy vòng về (${simulationProgress.progressPercent}%)" else "Đang chạy (${simulationProgress.progressPercent}%)"
+                                    SimulationStatus.RESTING -> "Tạm nghỉ: còn ${simulationProgress.pauseRemainingSeconds}s"
                                     SimulationStatus.PAUSED -> "Tạm dừng (${simulationProgress.progressPercent}%)"
                                     else -> "Sẵn sàng"
                                 },
@@ -575,12 +575,20 @@ fun MapScreen(
                             )
                         }
 
-                        Text(
-                            text = "${String.format(java.util.Locale.US, "%.1f", simulationProgress.currentSpeedKmh)} km/h",
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF38BDF8),
-                            fontSize = 14.sp
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Pace: ${GeoUtils.formatPace(simulationProgress.currentSpeedKmh)}",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8),
+                                fontSize = 13.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "(${String.format(java.util.Locale.US, "%.1f", simulationProgress.currentSpeedKmh)} km/h)",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -604,14 +612,21 @@ fun MapScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Đã chạy: ",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp
+                                )
+                                Text(
+                                    text = GeoUtils.formatDistance(simulationProgress.distanceCoveredMeters),
+                                    color = Color(0xFF34D399),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Text(
-                                text = "Còn lại: ${GeoUtils.formatDistance(simulationProgress.remainingDistanceMeters)}",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "Thời gian ước tính: ${GeoUtils.formatDuration(simulationProgress.remainingTimeSeconds)}",
+                                text = "Chặng này còn: ${GeoUtils.formatDistance(simulationProgress.remainingDistanceMeters)} • ❤️ ${simulationProgress.currentHeartRateBpm} BPM",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 11.sp
                             )

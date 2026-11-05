@@ -330,19 +330,20 @@ object FitExporter {
                 val baseElevation = 2.8 // Center ~2.8m (within 1.0m - 5.0m rules)
                 altMeters = (baseElevation + macroHill + microHill + roadNoise).coerceIn(1.1, 4.9)
 
-                // Heart Rate
+                // Dynamic speed intervals (changes pace across cycles - warmup, surge, cruise, recovery)
+                instantSpeedMps = (GeoUtils.getDynamicRunningSpeed(effectiveSpeedKmh, s.toLong(), true) / 3.6).coerceIn(1.0, 7.5)
+
+                // Dynamic Heart Rate with wide physiological swing (coupled to pace surges + multi-frequency waves)
                 val warmupProgress = (s.toDouble() / warmupDurationSec).coerceIn(0.0, 1.0)
                 val baseHr = warmupStartBpm + (targetCruiseBpm - warmupStartBpm) * sin(warmupProgress * (Math.PI / 2.0))
-                val hrvWave = sin(s * 0.048) * 2.6 + cos(s * 0.019) * 1.8 + sin(s * 0.21) * 1.0
-                instantHr = (baseHr + hrvWave).roundToInt().coerceIn(98, 195)
+                val paceSurgeRatio = (instantSpeedMps - speedMps) / speedMps.coerceAtLeast(0.5)
+                val speedHrImpact = paceSurgeRatio * 18.0 // +18 BPM on surges, -12 BPM on recovery dips
+                val multiWaveHrv = sin(s * 0.045) * 7.5 + cos(s * 0.018) * 5.5 + sin(s * 0.22) * 3.0
+                instantHr = (baseHr + speedHrImpact + multiWaveHrv).roundToInt().coerceIn(98, 195)
 
-                // Cadence
-                val cadenceOscillation = sin(s * 0.035) * 2.8 + cos(s * 0.09) * 1.4
+                // Cadence fluctuates naturally with speed
+                val cadenceOscillation = sin(s * 0.035) * 3.2 + cos(s * 0.09) * 1.8 + paceSurgeRatio * 8.0
                 instantSpm = (baseRunningSpm + cadenceOscillation).roundToInt().coerceIn(120, 205)
-
-                // Speed fluctuation
-                val speedFluctuation = sin(s * 0.12) * 0.15 + cos(s * 0.035) * 0.1
-                instantSpeedMps = (speedMps + speedFluctuation).coerceIn(1.0, 8.0)
             }
 
             val altScaled = ((altMeters + 500.0) * 5.0).roundToInt().coerceIn(0, 65534)
