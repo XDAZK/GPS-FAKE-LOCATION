@@ -35,9 +35,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = MockLocationRepository(db.mockDao())
     private val mockLocationManager = MockLocationManager(application)
 
-    // Current targeted/selected point (Default: Hồ Hoàn Kiếm, Hà Nội or user's real GPS)
+    // Current targeted/selected point (Default: Hoàng Diệu 2 – Linh Trung, Thủ Đức theo Maps 01/11/2026)
     private val _selectedPoint = MutableStateFlow(
-        GeoPoint(latitude = 21.028511, longitude = 105.854444, name = "Đang tải vị trí...")
+        GeoPoint(latitude = 10.859323, longitude = 106.768547, altitude = 2.8, name = "Hoàng Diệu 2 – Linh Trung (01/11/2026)")
     )
     val selectedPoint: StateFlow<GeoPoint> = _selectedPoint.asStateFlow()
 
@@ -431,7 +431,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 file = fitFile,
                 points = points,
                 customStartTimeMillis = customStartTimeMillis,
-                speedKmh = _simulationConfig.value.speedKmh
+                speedKmh = _simulationConfig.value.speedKmh,
+                config = _simulationConfig.value
             )
             fitFile
         } catch (e: Exception) {

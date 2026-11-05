@@ -44,6 +44,11 @@ class MockLocationService : Service() {
     private var accumulatedSteps = 0.0
     private var accumulatedCalories = 0.0
 
+    private var routeCurrentWaypointIdx = 0
+    private var routeCurrentPos: GeoPoint? = null
+    private var routeLegProgressMeters = 0.0
+    private var routeDistanceCovered = 0.0
+
     companion object {
         const val CHANNEL_ID = "mock_location_channel"
         const val NOTIFICATION_ID = 1001
@@ -346,7 +351,7 @@ class MockLocationService : Service() {
         }
     }
 
-    private fun startRouteSimulation() {
+    private fun startRouteSimulation(isResume: Boolean = false) {
         acquireWakeLock()
         val waypoints = _routeWaypoints.value
         if (waypoints.size < 2) return
@@ -356,28 +361,33 @@ class MockLocationService : Service() {
 
         simulationJob?.cancel()
 
+        if (!isResume || routeCurrentPos == null) {
+            routeCurrentWaypointIdx = 0
+            routeCurrentPos = waypoints[0]
+            routeLegProgressMeters = 0.0
+            routeDistanceCovered = 0.0
+            accumulatedSteps = 0.0
+            accumulatedCalories = 0.0
+        }
+
         val initialBpm = heartRateSimulator.calculateBpm(config.speedKmh, isResting = false, config = config)
         val initialNotif = buildNotification(
-            title = "GeoSim: Bắt đầu lộ trình (${waypoints.size} điểm) • ❤️ ${initialBpm} BPM",
-            content = "Tiến độ: 0% | Tốc độ: ${config.speedKmh.toInt()} km/h | Nhịp tim: $initialBpm BPM",
-            progressPercent = 0
+            title = "GeoSim: Đang chạy lộ trình (${waypoints.size} điểm) • ❤️ ${initialBpm} BPM",
+            content = "Tiến độ: ${_simulationProgress.value.progressPercent}% | Tốc độ: ${config.speedKmh.toInt()} km/h",
+            progressPercent = _simulationProgress.value.progressPercent
         )
         startForegroundCompat(NOTIFICATION_ID, initialNotif)
 
         simulationJob = serviceScope.launch {
-            var currentWaypointIdx = 0
-            var currentPos = waypoints[0]
             val totalDistance = GeoUtils.calculateTotalDistance(waypoints)
-            var distanceCovered = 0.0
 
-            while (isActive && currentWaypointIdx < waypoints.size - 1) {
-                val nextWaypoint = waypoints[currentWaypointIdx + 1]
-                val legDistance = GeoUtils.distanceBetween(currentPos, nextWaypoint)
-                var legProgressMeters = 0.0
+            while (isActive && routeCurrentWaypointIdx < waypoints.size - 1) {
+                val startOfLeg = waypoints[routeCurrentWaypointIdx]
+                val nextWaypoint = waypoints[routeCurrentWaypointIdx + 1]
+                val legDistance = GeoUtils.distanceBetween(startOfLeg, nextWaypoint)
+                val bearing = GeoUtils.bearingBetween(startOfLeg, nextWaypoint)
 
-                val bearing = GeoUtils.bearingBetween(currentPos, nextWaypoint)
-
-                while (isActive && legProgressMeters < legDistance) {
+                while (isActive && routeLegProgressMeters < legDistance) {
                     val currentConfig = _activeConfig.value
                     val currentSpeed = GeoUtils.getHumanizedSpeed(
                         currentConfig.speedKmh,
@@ -403,17 +413,18 @@ class MockLocationService : Service() {
                         accumulatedSteps += (currentCadence / 60.0)
                     }
 
-                    // Meters per 1000ms
+                    // Distance traveled in 1 second
                     val stepMeters = (currentSpeed * 1000.0) / 3600.0
-
-                    legProgressMeters += stepMeters
-                    distanceCovered += stepMeters
-                    if (legProgressMeters > legDistance) {
-                        legProgressMeters = legDistance
+                    routeLegProgressMeters += stepMeters
+                    routeDistanceCovered += stepMeters
+                    if (routeLegProgressMeters > legDistance) {
+                        routeLegProgressMeters = legDistance
                     }
 
-                    val fraction = (legProgressMeters / legDistance).coerceIn(0.0, 1.0)
-                    val interpolatedPoint = GeoUtils.interpolate(currentPos, nextWaypoint, fraction)
+                    val fraction = if (legDistance > 0.001) (routeLegProgressMeters / legDistance).coerceIn(0.0, 1.0) else 1.0
+                    val interpolatedPoint = GeoUtils.interpolate(startOfLeg, nextWaypoint, fraction)
+                    routeCurrentPos = interpolatedPoint
+
                     val jitteredPoint = GeoUtils.applyGpsJitter(interpolatedPoint, currentConfig.enableGpsJitter)
                         .copy(heartRate = currentBpm, cadence = currentCadence)
 
@@ -425,14 +436,14 @@ class MockLocationService : Service() {
                         steps = accumulatedSteps.toLong()
                     )
 
-                    val remainingDist = (totalDistance - distanceCovered).coerceAtLeast(0.0)
-                    val percent = if (totalDistance > 0) ((distanceCovered / totalDistance) * 100).toInt().coerceIn(0, 100) else 0
+                    val remainingDist = (totalDistance - routeDistanceCovered).coerceAtLeast(0.0)
+                    val percent = if (totalDistance > 0) ((routeDistanceCovered / totalDistance) * 100).toInt().coerceIn(0, 100) else 0
                     val remainingSeconds = if (currentSpeed > 0) ((remainingDist / ((currentSpeed * 1000.0) / 3600.0))).toLong() else 0L
 
                     _simulationProgress.value = SimulationProgress(
                         status = SimulationStatus.RUNNING,
                         currentPoint = jitteredPoint,
-                        currentWaypointIndex = currentWaypointIdx,
+                        currentWaypointIndex = routeCurrentWaypointIdx,
                         totalWaypoints = waypoints.size,
                         progressPercent = percent,
                         currentSpeedKmh = currentSpeed,
@@ -455,12 +466,13 @@ class MockLocationService : Service() {
                     delay(1000L)
                 }
 
-                currentPos = nextWaypoint
-                currentWaypointIdx++
+                routeCurrentPos = nextWaypoint
+                routeLegProgressMeters = 0.0
+                routeCurrentWaypointIdx++
 
                 // Randomized rest / dwell time at waypoint
                 val currentConfig = _activeConfig.value
-                if (currentConfig.enableRandomPause && currentWaypointIdx < waypoints.size) {
+                if (currentConfig.enableRandomPause && routeCurrentWaypointIdx < waypoints.size - 1) {
                     val pauseDurationSec = if (currentConfig.maxPauseSeconds > currentConfig.minPauseSeconds) {
                         Random.nextInt(currentConfig.minPauseSeconds, currentConfig.maxPauseSeconds + 1)
                     } else {
@@ -480,7 +492,7 @@ class MockLocationService : Service() {
                         )
 
                         mockLocationManager.pushMockLocation(
-                            geoPoint = GeoUtils.applyGpsJitter(currentPos, currentConfig.enableGpsJitter).copy(heartRate = restingBpm),
+                            geoPoint = GeoUtils.applyGpsJitter(nextWaypoint, currentConfig.enableGpsJitter).copy(heartRate = restingBpm),
                             speedKmh = 0f,
                             bearing = bearing,
                             caloriesKcal = accumulatedCalories,
@@ -488,7 +500,7 @@ class MockLocationService : Service() {
                         )
 
                         val notif = buildNotification(
-                            title = "GeoSim: Tạm nghỉ ngẫu nhiên tại điểm $currentWaypointIdx • ❤️ ${restingBpm} BPM",
+                            title = "GeoSim: Tạm nghỉ ngẫu nhiên tại điểm $routeCurrentWaypointIdx • ❤️ ${restingBpm} BPM",
                             content = "Nghỉ an toàn: còn ${sec}s... | Tiến độ: ${_simulationProgress.value.progressPercent}%",
                             progressPercent = _simulationProgress.value.progressPercent
                         )
@@ -499,10 +511,11 @@ class MockLocationService : Service() {
                 }
 
                 // If at the end and loopRoute is enabled, reset to start
-                if (currentWaypointIdx >= waypoints.size - 1 && currentConfig.loopRoute) {
-                    currentWaypointIdx = 0
-                    currentPos = waypoints[0]
-                    distanceCovered = 0.0
+                if (routeCurrentWaypointIdx >= waypoints.size - 1 && currentConfig.loopRoute) {
+                    routeCurrentWaypointIdx = 0
+                    routeCurrentPos = waypoints[0]
+                    routeLegProgressMeters = 0.0
+                    routeDistanceCovered = 0.0
                 }
             }
 
@@ -527,12 +540,32 @@ class MockLocationService : Service() {
 
     private fun pauseSimulation() {
         simulationJob?.cancel()
-        _simulationProgress.value = _simulationProgress.value.copy(status = SimulationStatus.PAUSED)
+        _simulationProgress.value = _simulationProgress.value.copy(
+            status = SimulationStatus.PAUSED,
+            currentSpeedKmh = 0f
+        )
+
+        // Hold paused position so device GPS doesn't leak physical location
+        val pausedPoint = _simulationProgress.value.currentPoint ?: routeCurrentPos
+        if (pausedPoint != null) {
+            simulationJob = serviceScope.launch {
+                while (isActive) {
+                    mockLocationManager.pushMockLocation(
+                        geoPoint = pausedPoint,
+                        speedKmh = 0f,
+                        bearing = 0f,
+                        caloriesKcal = accumulatedCalories,
+                        steps = accumulatedSteps.toLong()
+                    )
+                    delay(500L)
+                }
+            }
+        }
 
         val percent = _simulationProgress.value.progressPercent
         val notif = buildNotification(
-            title = "GeoSim: Đã tạm dừng",
-            content = "Tiến độ hiện tại: $percent% - Nhấn tiếp tục để chạy",
+            title = "GeoSim: Đã tạm dừng tại điểm",
+            content = "Tiến độ: $percent% - Nhấn tiếp tục để tiếp tục lộ trình",
             progressPercent = percent,
             isPaused = true
         )
@@ -540,7 +573,7 @@ class MockLocationService : Service() {
     }
 
     private fun resumeSimulation() {
-        startRouteSimulation()
+        startRouteSimulation(isResume = true)
     }
 
     private fun stopMockingService() {
@@ -548,6 +581,11 @@ class MockLocationService : Service() {
         releaseWakeLock()
         MockStateStore.clearActive(this)
         mockLocationManager.stopMocking()
+
+        routeCurrentPos = null
+        routeCurrentWaypointIdx = 0
+        routeLegProgressMeters = 0.0
+        routeDistanceCovered = 0.0
 
         _simulationProgress.value = SimulationProgress(
             status = SimulationStatus.IDLE,

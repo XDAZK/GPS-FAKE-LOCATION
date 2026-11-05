@@ -5,7 +5,7 @@ import java.io.Serializable
 data class GeoPoint(
     val latitude: Double,
     val longitude: Double,
-    val altitude: Double = 15.0,
+    val altitude: Double = 2.5,
     val name: String = "",
     val time: Long = System.currentTimeMillis(),
     val heartRate: Int = 0, // Heart rate in BPM for GPX export

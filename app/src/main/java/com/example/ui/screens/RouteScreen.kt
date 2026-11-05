@@ -540,12 +540,29 @@ fun RouteScreen(
         )
     }
 
-    // Export FIT Options Dialog (Allows setting customized start time)
+    // Export FIT Options Dialog (Allows typing customized start date and time directly)
     if (showExportFitDialog) {
-        val calendar = remember { java.util.Calendar.getInstance() }
-        var selectedHour by remember { mutableStateOf(calendar.get(java.util.Calendar.HOUR_OF_DAY)) }
-        var selectedMinute by remember { mutableStateOf(calendar.get(java.util.Calendar.MINUTE)) }
-        var daysAgo by remember { mutableStateOf(0) } // 0: Hôm nay, 1: Hôm qua
+        var inputDateText by remember {
+            val nowStr = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.US).format(java.util.Date())
+            mutableStateOf("01/11/2026")
+        }
+        var inputTimeText by remember { mutableStateOf("05:30:00") }
+
+        // Live parsing
+        val parsedStartTimeMillis: Long? = remember(inputDateText, inputTimeText) {
+            val fullStr = "${inputDateText.trim()} ${inputTimeText.trim()}"
+            try {
+                val sdfWithSec = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.US).apply { isLenient = false }
+                sdfWithSec.parse(fullStr)?.time
+            } catch (_: Exception) {
+                try {
+                    val sdfNoSec = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.US).apply { isLenient = false }
+                    sdfNoSec.parse(fullStr)?.time
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { showExportFitDialog = false },
@@ -557,91 +574,66 @@ fun RouteScreen(
                 )
             },
             title = {
-                Text("Xuất File Garmin FIT (BPM & SPM)", fontWeight = FontWeight.Bold)
+                Text("Xuất File Garmin FIT (.FIT)", fontWeight = FontWeight.Bold)
             },
             text = {
                 Column {
                     Text(
-                        text = "Tùy chỉnh thời gian bắt đầu chạy để Strava/Garmin ghi nhận đúng khung giờ mong muốn:",
+                        text = "Nhập trực tiếp ngày giờ bắt đầu chạy để Strava/Garmin ghi nhận chính xác theo mong muốn:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Date selector shortcuts
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("Hôm nay" to 0, "Hôm qua" to 1, "2 ngày trước" to 2).forEach { (label, dayOffset) ->
-                            val isSelected = daysAgo == dayOffset
-                            androidx.compose.material3.FilterChip(
-                                selected = isSelected,
-                                onClick = { daysAgo = dayOffset },
-                                label = { Text(label, fontSize = 11.sp) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
+                    // Direct Date Input Field (dd/MM/yyyy)
+                    OutlinedTextField(
+                        value = inputDateText,
+                        onValueChange = { inputDateText = it },
+                        label = { Text("Ngày chạy (dd/MM/yyyy)") },
+                        placeholder = { Text("Ví dụ: 01/11/2026") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // Quick Hour Preset Buttons (Sáng sớm, Chiều, Tối)
-                    Text("Khung giờ chạy gợi ý:", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                    // Direct Time Input Field (HH:mm:ss)
+                    OutlinedTextField(
+                        value = inputTimeText,
+                        onValueChange = { inputTimeText = it },
+                        label = { Text("Giờ xuất phát (HH:mm:ss)") },
+                        placeholder = { Text("Ví dụ: 05:30:00") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Quick fill shortcuts (optional convenience, fills the text fields)
+                    Text("Điền nhanh ngày giờ (tùy chọn):", fontSize = 11.sp, color = Color(0xFF94A3B8))
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         listOf(
-                            "05:30 (Sáng)" to (5 to 30),
-                            "06:15 (Sáng)" to (6 to 15),
-                            "17:45 (Chiều)" to (17 to 45),
-                            "20:00 (Tối)" to (20 to 0)
-                        ).forEach { (label, time) ->
-                            val isMatch = selectedHour == time.first && selectedMinute == time.second
+                            "01/11/2026" to { inputDateText = "01/11/2026" },
+                            "Hôm nay" to {
+                                inputDateText = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.US).format(java.util.Date())
+                            },
+                            "05:30:00" to { inputTimeText = "05:30:00" },
+                            "17:45:00" to { inputTimeText = "17:45:00" }
+                        ).forEach { (label, action) ->
                             androidx.compose.material3.FilterChip(
-                                selected = isMatch,
-                                onClick = {
-                                    selectedHour = time.first
-                                    selectedMinute = time.second
-                                },
-                                label = { Text(label.split(" ").first(), fontSize = 10.sp) },
+                                selected = false,
+                                onClick = action,
+                                label = { Text(label, fontSize = 10.sp) },
                                 modifier = Modifier.weight(1f)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Time Inputs: Hour & Minute
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = String.format(java.util.Locale.US, "%02d", selectedHour),
-                            onValueChange = { str ->
-                                str.toIntOrNull()?.let { if (it in 0..23) selectedHour = it }
-                            },
-                            label = { Text("Giờ (0-23)") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(":", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        OutlinedTextField(
-                            value = String.format(java.util.Locale.US, "%02d", selectedMinute),
-                            onValueChange = { str ->
-                                str.toIntOrNull()?.let { if (it in 0..59) selectedMinute = it }
-                            },
-                            label = { Text("Phút (0-59)") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Preview Summary Card
                     Card(
@@ -650,26 +642,39 @@ fun RouteScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
-                            val targetCal = java.util.Calendar.getInstance().apply {
-                                add(java.util.Calendar.DAY_OF_YEAR, -daysAgo)
-                                set(java.util.Calendar.HOUR_OF_DAY, selectedHour)
-                                set(java.util.Calendar.MINUTE, selectedMinute)
-                                set(java.util.Calendar.SECOND, 0)
+                            if (parsedStartTimeMillis != null) {
+                                val dateStr = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.US).format(java.util.Date(parsedStartTimeMillis))
+                                Text(
+                                    text = "⏰ Khởi hành: $dateStr",
+                                    color = Color(0xFF34D399),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            } else {
+                                Text(
+                                    text = "⚠️ Định dạng ngày giờ: dd/MM/yyyy và HH:mm:ss",
+                                    color = Color(0xFFF43F5E),
+                                    fontSize = 11.sp
+                                )
                             }
-                            val dateStr = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.US).format(targetCal.time)
-                            Text(
-                                text = "⏰ Khởi hành: $dateStr",
-                                color = Color(0xFF34D399),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
                             Text(
                                 text = "⏱️ Ước tính thời gian: ${GeoUtils.formatDuration(totalTimeSeconds)} (${GeoUtils.formatDistance(totalDistanceMeters)})",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 11.sp
                             )
                             Text(
-                                text = "❤️ Nhịp tim: ~${simulationConfig.customHeartRateBpm} BPM • 👟 Bước chân: ~${simulationConfig.manualCadenceSpm} SPM",
+                                text = "⌚ Thiết bị: Garmin Forerunner 935 (S/N 3950640004)",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "❤️ Nhịp tim: Biến thiên sinh lý (Khởi động -> Aerobic + HRV)",
+                                color = Color(0xFFF43F5E),
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "👟 Guồng chân: 165 - 174 SPM • 🏔️ Độ cao: 1.0 - 5.0m",
                                 color = Color(0xFF38BDF8),
                                 fontSize = 11.sp
                             )
@@ -680,16 +685,8 @@ fun RouteScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val cal = java.util.Calendar.getInstance().apply {
-                            add(java.util.Calendar.DAY_OF_YEAR, -daysAgo)
-                            set(java.util.Calendar.HOUR_OF_DAY, selectedHour)
-                            set(java.util.Calendar.MINUTE, selectedMinute)
-                            set(java.util.Calendar.SECOND, 0)
-                            set(java.util.Calendar.MILLISECOND, 0)
-                        }
-                        val startTimeMillis = cal.timeInMillis
-
-                        val fitFile = viewModel.exportFitFile(customStartTimeMillis = startTimeMillis)
+                        val startTime = parsedStartTimeMillis ?: System.currentTimeMillis()
+                        val fitFile = viewModel.exportFitFile(customStartTimeMillis = startTime)
                         if (fitFile != null) {
                             shareWorkoutFile(context, fitFile, "application/octet-stream", "Chia sẻ file Garmin FIT")
                         }
