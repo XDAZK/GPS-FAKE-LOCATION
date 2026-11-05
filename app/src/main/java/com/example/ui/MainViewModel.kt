@@ -420,7 +420,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Returns the File in the app's cache directory ready to share
      */
     fun exportFitFile(customStartTimeMillis: Long? = null): File? {
-        val points = if (_waypoints.value.isNotEmpty()) _waypoints.value else listOf(_selectedPoint.value)
+        val liveTrack = MockLocationService.recordedTrack.value
+        val points = if (liveTrack.size >= 5) {
+            liveTrack
+        } else if (_waypoints.value.isNotEmpty()) {
+            _waypoints.value
+        } else {
+            listOf(_selectedPoint.value)
+        }
         if (points.isEmpty()) return null
 
         val context = getApplication<Application>()
@@ -446,7 +453,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Returns the File in the app's cache directory ready to share
      */
     fun exportGpxFile(customStartTimeMillis: Long? = null): File? {
-        val points = if (_waypoints.value.isNotEmpty()) _waypoints.value else listOf(_selectedPoint.value)
+        val liveTrack = MockLocationService.recordedTrack.value
+        val points = if (liveTrack.size >= 5) {
+            liveTrack
+        } else if (_waypoints.value.isNotEmpty()) {
+            _waypoints.value
+        } else {
+            listOf(_selectedPoint.value)
+        }
         if (points.isEmpty()) return null
 
         val adjustedPoints = if (customStartTimeMillis != null && customStartTimeMillis > 0) {

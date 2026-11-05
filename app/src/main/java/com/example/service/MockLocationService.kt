@@ -48,6 +48,7 @@ class MockLocationService : Service() {
     private var routeCurrentPos: GeoPoint? = null
     private var routeLegProgressMeters = 0.0
     private var routeDistanceCovered = 0.0
+    private val activeTrackList = ArrayList<GeoPoint>()
 
     companion object {
         const val CHANNEL_ID = "mock_location_channel"
@@ -75,6 +76,9 @@ class MockLocationService : Service() {
 
         private val _activeConfig = MutableStateFlow(SimulationConfig())
         val activeConfig = _activeConfig.asStateFlow()
+
+        private val _recordedTrack = MutableStateFlow<List<GeoPoint>>(emptyList())
+        val recordedTrack = _recordedTrack.asStateFlow()
 
         fun setWaypoints(points: List<GeoPoint>) {
             _routeWaypoints.value = points
@@ -368,6 +372,10 @@ class MockLocationService : Service() {
             routeDistanceCovered = 0.0
             accumulatedSteps = 0.0
             accumulatedCalories = 0.0
+            synchronized(activeTrackList) {
+                activeTrackList.clear()
+                _recordedTrack.value = emptyList()
+            }
         }
 
         val initialBpm = heartRateSimulator.calculateBpm(config.speedKmh, isResting = false, config = config)
@@ -435,6 +443,15 @@ class MockLocationService : Service() {
                         caloriesKcal = accumulatedCalories,
                         steps = accumulatedSteps.toLong()
                     )
+
+                    val recordedPoint = jitteredPoint.copy(
+                        time = System.currentTimeMillis(),
+                        altitude = jitteredPoint.altitude.coerceIn(1.1, 4.9)
+                    )
+                    synchronized(activeTrackList) {
+                        activeTrackList.add(recordedPoint)
+                        _recordedTrack.value = activeTrackList.toList()
+                    }
 
                     val remainingDist = (totalDistance - routeDistanceCovered).coerceAtLeast(0.0)
                     val percent = if (totalDistance > 0) ((routeDistanceCovered / totalDistance) * 100).toInt().coerceIn(0, 100) else 0

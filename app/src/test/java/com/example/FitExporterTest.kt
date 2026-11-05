@@ -71,8 +71,8 @@ class FitExporterTest {
         var recordDataStart = -1
         for (i in 14 until bytes.size - 30) {
             if (bytes[i] == 0x42.toByte() && bytes[i + 3] == 0x14.toByte()) { // Global msg 20 (record)
-                // Record definition is 27 bytes long: header (1) + reserved (2) + global id (2) + num fields (1) + 7 fields * 3 bytes (21) = 27
-                recordDataStart = i + 27
+                // Record definition is 30 bytes long: header (1) + reserved (2) + global id (2) + num fields (1) + 8 fields * 3 bytes (24) = 30
+                recordDataStart = i + 30
                 break
             }
         }
@@ -80,8 +80,8 @@ class FitExporterTest {
 
         var recordCount = 0
         var offset = recordDataStart
-        // Read records sequentially while header is 0x02
-        while (offset + 21 <= bytes.size && bytes[offset] == 0x02.toByte()) {
+        // Read records sequentially while header is 0x02 (23 bytes per record)
+        while (offset + 23 <= bytes.size && bytes[offset] == 0x02.toByte()) {
             val altScaled = buffer.getShort(offset + 13).toInt() and 0xFFFF
             val altMeters = (altScaled / 5.0) - 500.0
             assertTrue("Altitude must be >= 0.0m, was $altMeters", altMeters >= 0.0)
@@ -94,9 +94,44 @@ class FitExporterTest {
             // Single-leg RPM must be around 60-100 so Garmin displays SPM = RPM * 2 = 120-200
             assertTrue("Cadence RPM must be around 60-100 (for 120-200 SPM), was $cadRpm", cadRpm in 50..105)
 
+            val distScaled = buffer.getInt(offset + 17)
+            assertTrue("Distance must be non-negative, was $distScaled", distScaled >= 0)
+
+            val speedScaled = buffer.getShort(offset + 21).toInt() and 0xFFFF
+            val speedMps = speedScaled / 1000.0
+            assertTrue("Speed must be reasonable (1.0 to 15.0 m/s), was $speedMps", speedMps >= 0.5 && speedMps <= 15.0)
+
             recordCount++
-            offset += 21
+            offset += 23
         }
         assertTrue("Must generate high density records, was $recordCount", recordCount >= 30)
+    }
+
+    @Test
+    fun testLiveRecordedTrackExport() {
+        val baseTime = 1700000000000L
+        // Simulate 40 seconds of live recorded track (e.g. from loop simulation)
+        val livePoints = (0 until 40).map { sec ->
+            GeoPoint(
+                latitude = 10.859323 + (sec * 0.00003),
+                longitude = 106.768547 + (sec * 0.00003),
+                altitude = 2.4 + (sec % 5) * 0.2,
+                heartRate = 142 + (sec % 10),
+                cadence = 168 + (sec % 4),
+                time = baseTime + (sec * 1000L)
+            )
+        }
+
+        val bytes = FitExporter.generateFitBinary(livePoints)
+        assertTrue(bytes.size > 100)
+
+        // Verify valid FIT format & CRC
+        val sig = String(bytes, 8, 4, Charsets.US_ASCII)
+        assertEquals(".FIT", sig)
+
+        val dataPlusHeader = bytes.copyOfRange(0, bytes.size - 2)
+        val calculatedCrc = FitExporter.calculateCrc(dataPlusHeader)
+        val fileCrc = ((bytes[bytes.size - 1].toInt() and 0xFF) shl 8) or (bytes[bytes.size - 2].toInt() and 0xFF)
+        assertEquals(calculatedCrc, fileCrc)
     }
 }

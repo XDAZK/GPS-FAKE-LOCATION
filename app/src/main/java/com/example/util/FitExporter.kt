@@ -119,12 +119,15 @@ object FitExporter {
             else -> 12f // Standard 5:00 min/km running pace
         }
         val speedMps = ((effectiveSpeedKmh * 1000.0) / 3600.0).coerceIn(1.2, 8.0)
+        val isLiveTrack = points.size >= 10 && points.any { it.heartRate > 0 }
         val calculatedDurationSeconds = (totalDistMeters / speedMps).roundToInt().coerceAtLeast(points.size.coerceAtLeast(30))
-        val calculatedDurationMillis = calculatedDurationSeconds * 1000L
+        val finalDurationSeconds = if (isLiveTrack) points.size else calculatedDurationSeconds
+        val numSamples = if (isLiveTrack) points.size else calculatedDurationSeconds.coerceIn(30, 7200)
+        val finalDurationMillis = finalDurationSeconds * 1000L
 
         val startTimeMillis = customStartTimeMillis
-            ?: if (points.first().time > 0) points.first().time else (System.currentTimeMillis() - calculatedDurationMillis)
-        val endTimeMillis = startTimeMillis + calculatedDurationMillis
+            ?: if (points.first().time > 0) points.first().time else (System.currentTimeMillis() - finalDurationMillis)
+        val endTimeMillis = startTimeMillis + finalDurationMillis
 
         val startFitTime = toFitTimestamp(startTimeMillis)
         val endFitTime = toFitTimestamp(endTimeMillis)
@@ -208,23 +211,30 @@ object FitExporter {
         // ==========================================
         // 3. RECORD MESSAGES (Local Mesg 2) - Global Msg 20
         // High-Density 1Hz Track Points (Every 1 second)
+        // Standard Garmin FIT Record Fields:
+        // Field 253: timestamp (uint32)
+        // Field 0: position_lat (sint32)
+        // Field 1: position_long (sint32)
+        // Field 2: altitude (uint16, scale 5, offset 500)
+        // Field 3: heart_rate (uint8, bpm)
+        // Field 4: cadence (uint8, single-leg RPM)
+        // Field 5: distance (uint32, scale 100, units m) -> MANDATORY for distance charts!
+        // Field 6: speed (uint16, scale 1000, units m/s) -> MANDATORY for speed charts!
         // ==========================================
         val recordDef = byteArrayOf(
             0x42.toByte(), 0x00, 0x00,
             0x14, 0x00, // Global Msg 20 (record)
-            0x07,       // 7 fields
+            0x08,       // 8 fields
             0xFD.toByte(), 0x04, 0x86.toByte(), // Field 253: timestamp (uint32)
             0x00, 0x04, 0x85.toByte(),          // Field 0: position_lat (sint32)
             0x01, 0x04, 0x85.toByte(),          // Field 1: position_long (sint32)
             0x02, 0x02, 0x84.toByte(),          // Field 2: altitude (uint16, scale 5, offset 500)
             0x03, 0x01, 0x02,                   // Field 3: heart_rate (uint8, bpm)
             0x04, 0x01, 0x02,                   // Field 4: cadence (uint8, single-leg RPM)
-            0x06, 0x04, 0x86.toByte()           // Field 6: distance (uint32, scale 100, cm)
+            0x05, 0x04, 0x86.toByte(),          // Field 5: distance (uint32, scale 100, units m)
+            0x06, 0x02, 0x84.toByte()           // Field 6: speed (uint16, scale 1000, units m/s)
         )
         stream.write(recordDef)
-
-        // Number of 1Hz samples (capped to max 7200 for 2-hour workout to stay lean and fast)
-        val numSamples = calculatedDurationSeconds.coerceIn(30, 7200)
 
         // Target physiological cruise heart rate based on config or speed
         val targetCruiseBpm = when {
@@ -263,76 +273,104 @@ object FitExporter {
         var maxHr = 0
         var spmSum = 0L
         var spmCount = 0
+        var speedSumMps = 0.0
+        var maxSpeedMps = 0.0
         var currentSegmentIdx = 0
 
         for (s in 0 until numSamples) {
             val recordTimeMillis = startTimeMillis + (s * 1000L)
             val fitTime = toFitTimestamp(recordTimeMillis)
 
-            val progressFraction = s.toDouble() / numSamples.toDouble()
-            val currentDistMeters = progressFraction * totalDistMeters
+            var lat: Double
+            var lng: Double
+            var altMeters: Double
+            var instantHr: Int
+            var instantSpm: Int
+            var currentDistMeters: Double
+            var instantSpeedMps: Double
 
-            // 1. Calculate Lat / Lng by interpolating along route
-            var lat = points.first().latitude
-            var lng = points.first().longitude
-
-            if (points.size > 1) {
-                while (currentSegmentIdx < points.size - 2 && currentDistMeters > cumulativeDistances[currentSegmentIdx + 1]) {
-                    currentSegmentIdx++
+            if (isLiveTrack) {
+                val pt = points[s]
+                lat = pt.latitude
+                lng = pt.longitude
+                altMeters = pt.altitude.coerceIn(1.1, 4.9)
+                instantHr = if (pt.heartRate > 0) pt.heartRate else (145 + sin(s * 0.05) * 3.0).roundToInt().coerceIn(98, 195)
+                instantSpm = if (pt.cadence > 0) pt.cadence else 168
+                currentDistMeters = if (s < cumulativeDistances.size) cumulativeDistances[s] else totalDistMeters
+                instantSpeedMps = if (s > 0) {
+                    val dt = ((pt.time - points[s - 1].time) / 1000.0).coerceIn(0.5, 5.0)
+                    (GeoUtils.distanceBetween(points[s - 1], pt) / dt).coerceIn(0.5, 12.0)
+                } else {
+                    speedMps
                 }
-                val segDist = segmentDistances[currentSegmentIdx]
-                val segStartDist = cumulativeDistances[currentSegmentIdx]
-                val fraction = if (segDist > 0.001) ((currentDistMeters - segStartDist) / segDist).coerceIn(0.0, 1.0) else 0.0
-                val p1 = points[currentSegmentIdx]
-                val p2 = points[currentSegmentIdx + 1]
-                lat = p1.latitude + (p2.latitude - p1.latitude) * fraction
-                lng = p1.longitude + (p2.longitude - p1.longitude) * fraction
+            } else {
+                val progressFraction = s.toDouble() / numSamples.toDouble()
+                currentDistMeters = progressFraction * totalDistMeters
+
+                lat = points.first().latitude
+                lng = points.first().longitude
+
+                if (points.size > 1) {
+                    while (currentSegmentIdx < points.size - 2 && currentDistMeters > cumulativeDistances[currentSegmentIdx + 1]) {
+                        currentSegmentIdx++
+                    }
+                    val segDist = segmentDistances[currentSegmentIdx]
+                    val segStartDist = cumulativeDistances[currentSegmentIdx]
+                    val fraction = if (segDist > 0.001) ((currentDistMeters - segStartDist) / segDist).coerceIn(0.0, 1.0) else 0.0
+                    val p1 = points[currentSegmentIdx]
+                    val p2 = points[currentSegmentIdx + 1]
+                    lat = p1.latitude + (p2.latitude - p1.latitude) * fraction
+                    lng = p1.longitude + (p2.longitude - p1.longitude) * fraction
+                }
+
+                // Elevation (Độ cao): STRICTLY 1.0m - 5.0m
+                val macroHill = sin(progressFraction * Math.PI * 5.0) * 1.3
+                val microHill = cos(progressFraction * Math.PI * 19.0) * 0.4
+                val roadNoise = sin(s * 0.27) * 0.15
+                val baseElevation = 2.8 // Center ~2.8m (within 1.0m - 5.0m rules)
+                altMeters = (baseElevation + macroHill + microHill + roadNoise).coerceIn(1.1, 4.9)
+
+                // Heart Rate
+                val warmupProgress = (s.toDouble() / warmupDurationSec).coerceIn(0.0, 1.0)
+                val baseHr = warmupStartBpm + (targetCruiseBpm - warmupStartBpm) * sin(warmupProgress * (Math.PI / 2.0))
+                val hrvWave = sin(s * 0.048) * 2.6 + cos(s * 0.019) * 1.8 + sin(s * 0.21) * 1.0
+                instantHr = (baseHr + hrvWave).roundToInt().coerceIn(98, 195)
+
+                // Cadence
+                val cadenceOscillation = sin(s * 0.035) * 2.8 + cos(s * 0.09) * 1.4
+                instantSpm = (baseRunningSpm + cadenceOscillation).roundToInt().coerceIn(120, 205)
+
+                // Speed fluctuation
+                val speedFluctuation = sin(s * 0.12) * 0.15 + cos(s * 0.035) * 0.1
+                instantSpeedMps = (speedMps + speedFluctuation).coerceIn(1.0, 8.0)
             }
 
-            // 2. Elevation (Độ cao): STRICTLY 0.0m - 5.0m as requested by user ("độ cao chỉ cho phép 0=5m")
-            // Create a realistic undulating road/park terrain between 1.0m and 4.2m
-            val macroHill = sin(progressFraction * Math.PI * 5.0) * 1.3
-            val microHill = cos(progressFraction * Math.PI * 19.0) * 0.4
-            val roadNoise = sin(s * 0.27) * 0.15
-            val baseElevation = 2.8 // Center ~2.8m (within 1.0m - 5.0m rules)
-            val altMeters = (baseElevation + macroHill + microHill + roadNoise).coerceIn(1.1, 4.9)
             val altScaled = ((altMeters + 500.0) * 5.0).roundToInt().coerceIn(0, 65534)
-
-            // 3. Heart Rate: Physiological warmup curve + aerobic plateau + continuous natural HRV sinus oscillation
-            val warmupProgress = (s.toDouble() / warmupDurationSec).coerceIn(0.0, 1.0)
-            val baseHr = warmupStartBpm + (targetCruiseBpm - warmupStartBpm) * sin(warmupProgress * (Math.PI / 2.0))
-            // Natural Sinus Arrhythmia (period 20-40s) + HRV micro-noise
-            val hrvWave = sin(s * 0.048) * 2.6 + cos(s * 0.019) * 1.8 + sin(s * 0.21) * 1.0
-            val instantHr = (baseHr + hrvWave).roundToInt().coerceIn(98, 195)
+            val fitCadenceRpm = (instantSpm / 2.0).roundToInt().coerceIn(40, 110)
+            val distScaled = (currentDistMeters * 100.0).roundToInt().coerceAtLeast(0)
+            val speedScaled = (instantSpeedMps * 1000.0).roundToInt().coerceIn(0, 65534)
 
             hrSum += instantHr
             hrCount++
             if (instantHr > maxHr) maxHr = instantHr
 
-            // 4. Cadence (Guồng chân):
-            // CRITICAL FIX: Garmin Connect running parser multiplies RecordMesg.cadence by 2!
-            // When 135 was previously written, Garmin showed 135 * 2 = 270 SPM!
-            // To display realistic 162-174 SPM, we MUST write single-leg RPM = (targetSpm / 2.0)
-            val cadenceOscillation = sin(s * 0.035) * 2.8 + cos(s * 0.09) * 1.4
-            val instantSpm = (baseRunningSpm + cadenceOscillation).roundToInt().coerceIn(120, 205)
-            val fitCadenceRpm = (instantSpm / 2.0).roundToInt().coerceIn(40, 110)
-
             spmSum += instantSpm
             spmCount++
 
-            // 5. Scaled distance in cm
-            val distScaled = (currentDistMeters * 100.0).roundToInt().coerceAtLeast(0)
+            speedSumMps += instantSpeedMps
+            if (instantSpeedMps > maxSpeedMps) maxSpeedMps = instantSpeedMps
 
-            // Write 21-byte record message
-            val recordData = ByteBuffer.allocate(1 + 4 + 4 + 4 + 2 + 1 + 1 + 4).order(ByteOrder.LITTLE_ENDIAN).apply {
+            // Write 23-byte record message: 1 (header 0x02) + 4 (timestamp) + 4 (lat) + 4 (lng) + 2 (alt) + 1 (hr) + 1 (cadence) + 4 (dist) + 2 (speed)
+            val recordData = ByteBuffer.allocate(1 + 4 + 4 + 4 + 2 + 1 + 1 + 4 + 2).order(ByteOrder.LITTLE_ENDIAN).apply {
                 put(0x02.toByte())                 // Header: Data msg, local 2
                 putInt(fitTime.toInt())            // Timestamp (FIT epoch)
                 putInt(toSemicircles(lat))         // Latitude
                 putInt(toSemicircles(lng))         // Longitude
-                putShort(altScaled.toShort())      // Altitude (strictly 0.6m - 4.7m)
+                putShort(altScaled.toShort())      // Altitude (strictly 1.1m - 4.9m)
                 put(instantHr.toByte())            // Heart Rate (BPM)
                 put(fitCadenceRpm.toByte())        // Cadence (single-leg RPM -> Garmin displays RPM*2 SPM!)
-                putInt(distScaled)                 // Distance (cm)
+                putInt(distScaled)                 // Field 5: Distance (meters * 100)
+                putShort(speedScaled.toShort())    // Field 6: Speed (m/s * 1000)
             }.array()
             stream.write(recordData)
         }
@@ -353,6 +391,10 @@ object FitExporter {
         val distScaled = (totalDistMeters * 100.0).roundToInt()
         val avgHr = if (hrCount > 0) (hrSum / hrCount).toInt() else 145
         val avgSpm = if (spmCount > 0) (spmSum / spmCount).toInt() else 168
+        val avgSpeedMps = if (numSamples > 0) speedSumMps / numSamples else speedMps
+        val avgSpeedScaled = (avgSpeedMps * 1000.0).roundToInt().coerceIn(0, 65534)
+        val maxSpeedScaled = (maxSpeedMps.coerceAtLeast(avgSpeedMps) * 1000.0).roundToInt().coerceIn(0, 65534)
+
         // Garmin Connect also multiplies avg_cadence by 2 for running activities!
         val avgCadenceRpm = (avgSpm / 2.0).roundToInt().coerceIn(40, 110)
         val estimatedCalories = ((durationSeconds / 60.0) * 11.2).roundToInt().coerceIn(1, 9999)
@@ -363,13 +405,15 @@ object FitExporter {
         val lapDef = byteArrayOf(
             0x43.toByte(), 0x00, 0x00,
             0x13, 0x00, // Global Msg 19 (lap)
-            0x0B,       // 11 fields
+            0x0D,       // 13 fields
             0xFD.toByte(), 0x04, 0x86.toByte(), // Field 253: timestamp
             0x02, 0x04, 0x86.toByte(),          // Field 2: start_time
             0x07, 0x04, 0x86.toByte(),          // Field 7: total_elapsed_time
             0x08, 0x04, 0x86.toByte(),          // Field 8: total_timer_time
             0x09, 0x04, 0x86.toByte(),          // Field 9: total_distance
             0x0B, 0x02, 0x84.toByte(),          // Field 11: total_calories
+            0x0D, 0x02, 0x84.toByte(),          // Field 13: avg_speed (uint16, scale 1000, m/s)
+            0x0E, 0x02, 0x84.toByte(),          // Field 14: max_speed (uint16, scale 1000, m/s)
             0x0F, 0x01, 0x02,                   // Field 15: avg_heart_rate
             0x10, 0x01, 0x02,                   // Field 16: max_heart_rate
             0x11, 0x01, 0x02,                   // Field 17: avg_cadence (single-leg RPM)
@@ -378,7 +422,7 @@ object FitExporter {
         )
         stream.write(lapDef)
 
-        val lapData = ByteBuffer.allocate(1 + 4 + 4 + 4 + 4 + 4 + 2 + 1 + 1 + 1 + 1 + 1).order(ByteOrder.LITTLE_ENDIAN).apply {
+        val lapData = ByteBuffer.allocate(1 + 4 + 4 + 4 + 4 + 4 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1).order(ByteOrder.LITTLE_ENDIAN).apply {
             put(0x03.toByte())                // Header: Data msg, local 3
             putInt(endFitTime.toInt())        // Timestamp
             putInt(startFitTime.toInt())      // Start time
@@ -386,6 +430,8 @@ object FitExporter {
             putInt(timeScaled)                // Total timer time (ms)
             putInt(distScaled)                // Total distance (meters * 100)
             putShort(estimatedCalories.toShort()) // Total calories
+            putShort(avgSpeedScaled.toShort()) // Avg speed (m/s * 1000)
+            putShort(maxSpeedScaled.toShort()) // Max speed (m/s * 1000)
             put(avgHr.toByte())               // Avg heart rate
             put(maxHr.coerceAtLeast(avgHr).toByte()) // Max heart rate
             put(avgCadenceRpm.toByte())       // Avg cadence (single-leg RPM -> displayed as avgSpm)
@@ -400,7 +446,7 @@ object FitExporter {
         val sessionDef = byteArrayOf(
             0x44.toByte(), 0x00, 0x00,
             0x12, 0x00, // Global Msg 18 (session)
-            0x0C,       // 12 fields
+            0x0E,       // 14 fields
             0xFD.toByte(), 0x04, 0x86.toByte(), // Field 253: timestamp
             0x02, 0x04, 0x86.toByte(),          // Field 2: start_time
             0x05, 0x01, 0x00,                   // Field 5: sport (enum, 1 = Running)
@@ -409,6 +455,8 @@ object FitExporter {
             0x08, 0x04, 0x86.toByte(),          // Field 8: total_timer_time
             0x09, 0x04, 0x86.toByte(),          // Field 9: total_distance
             0x0B, 0x02, 0x84.toByte(),          // Field 11: total_calories
+            0x0E, 0x02, 0x84.toByte(),          // Field 14: avg_speed (uint16, scale 1000, m/s)
+            0x0F, 0x02, 0x84.toByte(),          // Field 15: max_speed (uint16, scale 1000, m/s)
             0x10, 0x01, 0x02,                   // Field 16: avg_heart_rate (uint8)
             0x11, 0x01, 0x02,                   // Field 17: max_heart_rate (uint8)
             0x12, 0x01, 0x02,                   // Field 18: avg_cadence (uint8, single-leg RPM)
@@ -416,7 +464,7 @@ object FitExporter {
         )
         stream.write(sessionDef)
 
-        val sessionData = ByteBuffer.allocate(1 + 4 + 4 + 1 + 1 + 4 + 4 + 4 + 2 + 1 + 1 + 1 + 2).order(ByteOrder.LITTLE_ENDIAN).apply {
+        val sessionData = ByteBuffer.allocate(1 + 4 + 4 + 1 + 1 + 4 + 4 + 4 + 2 + 2 + 2 + 1 + 1 + 1 + 2).order(ByteOrder.LITTLE_ENDIAN).apply {
             put(0x04.toByte())                // Header: Data msg, local 4
             putInt(endFitTime.toInt())        // Timestamp
             putInt(startFitTime.toInt())      // Start time
@@ -426,6 +474,8 @@ object FitExporter {
             putInt(timeScaled)                // Total timer time (ms)
             putInt(distScaled)                // Total distance (meters * 100)
             putShort(estimatedCalories.toShort()) // Total calories
+            putShort(avgSpeedScaled.toShort()) // Avg speed (m/s * 1000)
+            putShort(maxSpeedScaled.toShort()) // Max speed (m/s * 1000)
             put(avgHr.toByte())               // Avg heart rate
             put(maxHr.coerceAtLeast(avgHr).toByte()) // Max heart rate
             put(avgCadenceRpm.toByte())       // Avg cadence (single-leg RPM -> displayed as avgSpm)

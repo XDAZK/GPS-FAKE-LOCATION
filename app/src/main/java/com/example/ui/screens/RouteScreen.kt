@@ -642,6 +642,16 @@ fun RouteScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
+                            val liveTrack = com.example.service.MockLocationService.recordedTrack.collectAsState().value
+                            if (liveTrack.size >= 5) {
+                                Text(
+                                    text = "🟢 Đang ghi thực tế: ${liveTrack.size} giây • Xuất chính xác đến thời điểm hiện tại!",
+                                    color = Color(0xFF10B981),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                            }
                             if (parsedStartTimeMillis != null) {
                                 val dateStr = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.US).format(java.util.Date(parsedStartTimeMillis))
                                 Text(
