@@ -84,6 +84,7 @@ fun RouteScreen(
 
     var showSaveRouteDialog by remember { mutableStateOf(false) }
     var showImportGpxDialog by remember { mutableStateOf(false) }
+    var showExportFitDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
 
     val totalDistanceMeters = GeoUtils.calculateTotalDistance(waypoints)
@@ -260,35 +261,60 @@ fun RouteScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // GPX Tools Row (Export / Import GPX)
+        // Export / Import Workout Data (FIT & GPX)
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilledTonalButton(
                 onClick = {
-                    shareGpxFile(context, viewModel.exportGpxXml())
+                    showExportFitDialog = true
                 },
+                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+                    containerColor = Color(0xFF065F46),
+                    contentColor = Color(0xFFA7F3D0)
+                ),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
-                    .weight(1f)
-                    .testTag("export_gpx_button")
+                    .weight(1.1f)
+                    .testTag("export_fit_button")
             ) {
-                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Xuất GPX (Kèm BPM)", fontSize = 12.sp)
+                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Xuất file FIT (SPM, BPM)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
 
             FilledTonalButton(
-                onClick = { showImportGpxDialog = true },
+                onClick = {
+                    val gpxFile = viewModel.exportGpxFile()
+                    if (gpxFile != null) {
+                        shareWorkoutFile(context, gpxFile, "application/gpx+xml", "Chia sẻ file GPX")
+                    } else {
+                        shareGpxText(context, viewModel.exportGpxXml())
+                    }
+                },
+                colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+                    containerColor = Color(0xFF1E293B),
+                    contentColor = Color(0xFF38BDF8)
+                ),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
-                    .weight(1f)
+                    .weight(0.9f)
+                    .testTag("export_gpx_button")
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Xuất GPX", fontSize = 11.sp)
+            }
+
+            IconButton(
+                onClick = { showImportGpxDialog = true },
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF1E293B))
                     .testTag("import_gpx_button")
             ) {
-                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Nhập file GPX", fontSize = 13.sp)
+                Icon(Icons.Default.FileUpload, contentDescription = "Nhập GPX", tint = Color(0xFFE2E8F0))
             }
         }
 
@@ -514,6 +540,174 @@ fun RouteScreen(
         )
     }
 
+    // Export FIT Options Dialog (Allows setting customized start time)
+    if (showExportFitDialog) {
+        val calendar = remember { java.util.Calendar.getInstance() }
+        var selectedHour by remember { mutableStateOf(calendar.get(java.util.Calendar.HOUR_OF_DAY)) }
+        var selectedMinute by remember { mutableStateOf(calendar.get(java.util.Calendar.MINUTE)) }
+        var daysAgo by remember { mutableStateOf(0) } // 0: Hôm nay, 1: Hôm qua
+
+        AlertDialog(
+            onDismissRequest = { showExportFitDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = null,
+                    tint = Color(0xFF10B981)
+                )
+            },
+            title = {
+                Text("Xuất File Garmin FIT (BPM & SPM)", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Tùy chỉnh thời gian bắt đầu chạy để Strava/Garmin ghi nhận đúng khung giờ mong muốn:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Date selector shortcuts
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("Hôm nay" to 0, "Hôm qua" to 1, "2 ngày trước" to 2).forEach { (label, dayOffset) ->
+                            val isSelected = daysAgo == dayOffset
+                            androidx.compose.material3.FilterChip(
+                                selected = isSelected,
+                                onClick = { daysAgo = dayOffset },
+                                label = { Text(label, fontSize = 11.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Quick Hour Preset Buttons (Sáng sớm, Chiều, Tối)
+                    Text("Khung giờ chạy gợi ý:", fontSize = 11.sp, color = Color(0xFF94A3B8))
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "05:30 (Sáng)" to (5 to 30),
+                            "06:15 (Sáng)" to (6 to 15),
+                            "17:45 (Chiều)" to (17 to 45),
+                            "20:00 (Tối)" to (20 to 0)
+                        ).forEach { (label, time) ->
+                            val isMatch = selectedHour == time.first && selectedMinute == time.second
+                            androidx.compose.material3.FilterChip(
+                                selected = isMatch,
+                                onClick = {
+                                    selectedHour = time.first
+                                    selectedMinute = time.second
+                                },
+                                label = { Text(label.split(" ").first(), fontSize = 10.sp) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Time Inputs: Hour & Minute
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = String.format(java.util.Locale.US, "%02d", selectedHour),
+                            onValueChange = { str ->
+                                str.toIntOrNull()?.let { if (it in 0..23) selectedHour = it }
+                            },
+                            label = { Text("Giờ (0-23)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(":", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        OutlinedTextField(
+                            value = String.format(java.util.Locale.US, "%02d", selectedMinute),
+                            onValueChange = { str ->
+                                str.toIntOrNull()?.let { if (it in 0..59) selectedMinute = it }
+                            },
+                            label = { Text("Phút (0-59)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Preview Summary Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            val targetCal = java.util.Calendar.getInstance().apply {
+                                add(java.util.Calendar.DAY_OF_YEAR, -daysAgo)
+                                set(java.util.Calendar.HOUR_OF_DAY, selectedHour)
+                                set(java.util.Calendar.MINUTE, selectedMinute)
+                                set(java.util.Calendar.SECOND, 0)
+                            }
+                            val dateStr = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.US).format(targetCal.time)
+                            Text(
+                                text = "⏰ Khởi hành: $dateStr",
+                                color = Color(0xFF34D399),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "⏱️ Ước tính thời gian: ${GeoUtils.formatDuration(totalTimeSeconds)} (${GeoUtils.formatDistance(totalDistanceMeters)})",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "❤️ Nhịp tim: ~${simulationConfig.customHeartRateBpm} BPM • 👟 Bước chân: ~${simulationConfig.manualCadenceSpm} SPM",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cal = java.util.Calendar.getInstance().apply {
+                            add(java.util.Calendar.DAY_OF_YEAR, -daysAgo)
+                            set(java.util.Calendar.HOUR_OF_DAY, selectedHour)
+                            set(java.util.Calendar.MINUTE, selectedMinute)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                        }
+                        val startTimeMillis = cal.timeInMillis
+
+                        val fitFile = viewModel.exportFitFile(customStartTimeMillis = startTimeMillis)
+                        if (fitFile != null) {
+                            shareWorkoutFile(context, fitFile, "application/octet-stream", "Chia sẻ file Garmin FIT")
+                        }
+                        showExportFitDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                ) {
+                    Text("Xuất File & Chia Sẻ", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportFitDialog = false }) {
+                    Text("Hủy")
+                }
+            }
+        )
+    }
+
     if (showSettingsSheet) {
         SimulationSettingsSheet(
             config = simulationConfig,
@@ -539,16 +733,37 @@ private fun SampleRouteButton(title: String, desc: String, onClick: () -> Unit) 
     }
 }
 
-private fun shareGpxFile(context: Context, gpxContent: String) {
+private fun shareWorkoutFile(context: Context, file: java.io.File, mimeType: String, chooserTitle: String) {
     try {
-        val sendIntent: Intent = Intent().apply {
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, file.name)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val shareIntent = Intent.createChooser(sendIntent, chooserTitle).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(shareIntent)
+    } catch (_: Exception) {}
+}
+
+private fun shareGpxText(context: Context, gpxContent: String) {
+    try {
+        val sendIntent = Intent().apply {
             action = Intent.ACTION_SEND
             putExtra(Intent.EXTRA_TEXT, gpxContent)
             putExtra(Intent.EXTRA_SUBJECT, "GeoSim_Route_${System.currentTimeMillis()}.gpx")
             type = "text/plain"
         }
-        val shareIntent = Intent.createChooser(sendIntent, "Chia sẻ file GPX")
-        shareIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        val shareIntent = Intent.createChooser(sendIntent, "Chia sẻ file GPX").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         context.startActivity(shareIntent)
     } catch (_: Exception) {}
 }

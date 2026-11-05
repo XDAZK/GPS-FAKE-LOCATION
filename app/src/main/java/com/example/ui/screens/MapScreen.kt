@@ -394,6 +394,8 @@ fun MapScreen(
                     )
 
                     // Waypoints Horizontal Scroll List
+                    var selectedWaypointIdx by remember { mutableStateOf<Int?>(null) }
+
                     if (waypoints.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         LazyRow(
@@ -401,10 +403,18 @@ fun MapScreen(
                             contentPadding = PaddingValues(vertical = 2.dp)
                         ) {
                             itemsIndexed(waypoints) { idx, wp ->
+                                val isSelected = selectedWaypointIdx == idx
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
-                                    color = Color(0xFF1E293B),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                                    color = if (isSelected) Color(0xFF0369A1) else Color(0xFF1E293B),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isSelected) Color(0xFF38BDF8) else Color(0xFF475569)
+                                    ),
+                                    onClick = {
+                                        selectedWaypointIdx = if (isSelected) null else idx
+                                        viewModel.selectLocation(wp.latitude, wp.longitude, wp.name)
+                                    }
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -412,13 +422,16 @@ fun MapScreen(
                                     ) {
                                         Text(
                                             text = "${idx + 1}. ${wp.name}",
-                                            color = Color(0xFFE2E8F0),
+                                            color = if (isSelected) Color.White else Color(0xFFE2E8F0),
                                             fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                         )
                                         Spacer(modifier = Modifier.width(4.dp))
                                         IconButton(
-                                            onClick = { viewModel.removeWaypoint(idx) },
+                                            onClick = {
+                                                if (selectedWaypointIdx == idx) selectedWaypointIdx = null
+                                                viewModel.removeWaypoint(idx)
+                                            },
                                             modifier = Modifier.size(18.dp)
                                         ) {
                                             Icon(

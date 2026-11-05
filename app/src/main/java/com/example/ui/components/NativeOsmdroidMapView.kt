@@ -246,10 +246,12 @@ fun NativeOsmdroidMapView(
                     val marker = Marker(mapView).apply {
                         position = org.osmdroid.util.GeoPoint(wp.latitude, wp.longitude)
                         title = "${index + 1}. ${wp.name}"
-                        snippet = "Chạm để xóa điểm mốc này"
+                        snippet = "Tọa độ: ${String.format(java.util.Locale.US, "%.5f", wp.latitude)}, ${String.format(java.util.Locale.US, "%.5f", wp.longitude)}"
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                        setOnMarkerClickListener { _, _ ->
-                            onRemoveWaypoint(index)
+                        setOnMarkerClickListener { m, _ ->
+                            // Select and focus this point instead of deleting it!
+                            onMapClick(wp.latitude, wp.longitude)
+                            m.showInfoWindow()
                             true
                         }
                     }

@@ -164,6 +164,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Overwrite/update an existing waypoint coordinates without deleting it
+     */
+    fun updateWaypoint(index: Int, lat: Double, lng: Double, name: String = "") {
+        if (index in _waypoints.value.indices) {
+            val updated = _waypoints.value.toMutableList()
+            val oldPoint = updated[index]
+            val label = if (name.isNotEmpty()) name else oldPoint.name.ifEmpty { "Điểm ${index + 1}" }
+            updated[index] = oldPoint.copy(latitude = lat, longitude = lng, name = label)
+            _waypoints.value = updated
+            MockLocationService.setWaypoints(updated)
+            _selectedPoint.value = updated[index]
+            _userMessage.value = "Đã cập nhật vị trí điểm ${index + 1}"
+        }
+    }
+
     fun clearWaypoints() {
         _waypoints.value = emptyList()
         MockLocationService.setWaypoints(emptyList())
@@ -397,6 +413,65 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun exportGpxXml(): String {
         val points = if (_waypoints.value.isNotEmpty()) _waypoints.value else listOf(_selectedPoint.value)
         return GpxExporter.exportToGpx("GeoSim_Route_${System.currentTimeMillis()}", points)
+    }
+
+    /**
+     * Export workout route as standard Garmin .FIT binary file
+     * Returns the File in the app's cache directory ready to share
+     */
+    fun exportFitFile(customStartTimeMillis: Long? = null): File? {
+        val points = if (_waypoints.value.isNotEmpty()) _waypoints.value else listOf(_selectedPoint.value)
+        if (points.isEmpty()) return null
+
+        val context = getApplication<Application>()
+        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val fitFile = File(exportDir, "GeoSim_Workout_${System.currentTimeMillis()}.fit")
+        return try {
+            com.example.util.FitExporter.writeFitToFile(
+                file = fitFile,
+                points = points,
+                customStartTimeMillis = customStartTimeMillis,
+                speedKmh = _simulationConfig.value.speedKmh
+            )
+            fitFile
+        } catch (e: Exception) {
+            _userMessage.value = "Lỗi xuất file FIT: ${e.message}"
+            null
+        }
+    }
+
+    /**
+     * Export workout route as standard .GPX file
+     * Returns the File in the app's cache directory ready to share
+     */
+    fun exportGpxFile(customStartTimeMillis: Long? = null): File? {
+        val points = if (_waypoints.value.isNotEmpty()) _waypoints.value else listOf(_selectedPoint.value)
+        if (points.isEmpty()) return null
+
+        val adjustedPoints = if (customStartTimeMillis != null && customStartTimeMillis > 0) {
+            val speedMps = ((_simulationConfig.value.speedKmh * 1000.0) / 3600.0).coerceAtLeast(1.0)
+            var currentT = customStartTimeMillis
+            points.mapIndexed { idx, pt ->
+                if (idx > 0) {
+                    val dist = GeoUtils.distanceBetween(points[idx - 1], pt)
+                    val legMs = ((dist / speedMps) * 1000.0).toLong().coerceAtLeast(1000L)
+                    currentT += legMs
+                }
+                pt.copy(time = currentT)
+            }
+        } else points
+
+        val context = getApplication<Application>()
+        val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val gpxFile = File(exportDir, "GeoSim_Route_${System.currentTimeMillis()}.gpx")
+        return try {
+            val xml = GpxExporter.exportToGpx("GeoSim_Route_${System.currentTimeMillis()}", adjustedPoints)
+            gpxFile.writeText(xml)
+            gpxFile
+        } catch (e: Exception) {
+            _userMessage.value = "Lỗi xuất file GPX: ${e.message}"
+            null
+        }
     }
 
     /**
