@@ -27,6 +27,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -79,78 +80,149 @@ fun SimulationSettingsSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Running Pace & Speed Presets (4:00 - 15:00 min/km)
-            val currentPaceMin = com.example.util.GeoUtils.speedKmhToPaceMinutes(config.speedKmh)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Running Pace Settings: Range (4:00 - 15:00 min/km) vs Single Fixed Pace
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
-                    Text(
-                        text = "Nhịp độ chạy (Pace): ${com.example.util.GeoUtils.formatPace(config.speedKmh)}",
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF38BDF8),
-                        fontSize = 16.sp
-                    )
-                    Text(
-                        text = "Tương đương: ${String.format(java.util.Locale.US, "%.1f", config.speedKmh)} km/h • Dải tiêu chuẩn 4:00 - 15:00 min/km",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Pace slider from 4.0 min/km (fast 15 km/h) to 15.0 min/km (walking 4 km/h)
-            Slider(
-                value = currentPaceMin.toFloat(),
-                onValueChange = { paceMin ->
-                    val newSpeed = com.example.util.GeoUtils.paceMinutesToSpeedKmh(paceMin.toDouble())
-                    onConfigChange(config.copy(speedKmh = newSpeed))
-                },
-                valueRange = 4.0f..15.0f,
-                steps = 109,
-                colors = SliderDefaults.colors(
-                    thumbColor = Color(0xFF38BDF8),
-                    activeTrackColor = Color(0xFF0284C7),
-                    inactiveTrackColor = Color(0xFF334155)
-                )
-            )
-
-            // Quick Pace Preset Chips (Horizontal scrolling row)
-            androidx.compose.foundation.lazy.LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val pacePresets = listOf(
-                    4.0 to "Pace 4:00 (15 km/h)",
-                    4.5 to "Pace 4:30 (13.3 km/h)",
-                    5.0 to "Pace 5:00 (12 km/h)",
-                    5.5 to "Pace 5:30 (10.9 km/h)",
-                    6.0 to "Pace 6:00 (10 km/h)",
-                    7.0 to "Pace 7:00 (8.6 km/h)",
-                    8.5 to "Pace 8:30 (7.1 km/h)",
-                    10.0 to "Pace 10:00 (6 km/h)",
-                    12.0 to "Pace 12:00 (5 km/h)",
-                    15.0 to "Pace 15:00 (4 km/h)"
-                )
-                items(pacePresets.size) { idx ->
-                    val (pMin, label) = pacePresets[idx]
-                    val isSelected = kotlin.math.abs(currentPaceMin - pMin) < 0.25
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            val newSpeed = com.example.util.GeoUtils.paceMinutesToSpeedKmh(pMin)
-                            onConfigChange(config.copy(speedKmh = newSpeed))
-                        },
-                        label = { Text(label, fontSize = 11.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF0284C7),
-                            selectedLabelColor = Color.White
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Dải nhịp độ chạy (Pace Range)",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8),
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = "Tự động chạy biến thiên qua mọi pace theo quãng đường và thời gian (không bị giữ 1 pace ngang như robot)",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+                        Switch(
+                            checked = config.enablePaceRange,
+                            onCheckedChange = { onConfigChange(config.copy(enablePaceRange = it)) },
+                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF38BDF8))
                         )
-                    )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (config.enablePaceRange) {
+                        val minPStr = com.example.util.GeoUtils.formatPaceFromMinutes(config.minPaceMinPerKm.toDouble())
+                        val maxPStr = com.example.util.GeoUtils.formatPaceFromMinutes(config.maxPaceMinPerKm.toDouble())
+                        val vFastKmh = com.example.util.GeoUtils.paceMinutesToSpeedKmh(config.minPaceMinPerKm.toDouble())
+                        val vSlowKmh = com.example.util.GeoUtils.paceMinutesToSpeedKmh(config.maxPaceMinPerKm.toDouble())
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Dải: $minPStr - $maxPStr",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8),
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "${String.format(java.util.Locale.US, "%.1f", vSlowKmh)} - ${String.format(java.util.Locale.US, "%.1f", vFastKmh)} km/h",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        val currentRange = config.minPaceMinPerKm.coerceIn(4.0f, 15.0f)..config.maxPaceMinPerKm.coerceIn(4.0f, 15.0f)
+                        RangeSlider(
+                            value = currentRange,
+                            onValueChange = { range ->
+                                onConfigChange(
+                                    config.copy(
+                                        minPaceMinPerKm = range.start,
+                                        maxPaceMinPerKm = range.endInclusive
+                                    )
+                                )
+                            },
+                            valueRange = 4.0f..15.0f,
+                            steps = 21,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF38BDF8),
+                                activeTrackColor = Color(0xFF0284C7),
+                                inactiveTrackColor = Color(0xFF334155)
+                            )
+                        )
+
+                        // Quick Range Preset Chips
+                        Text(
+                            text = "Gợi ý dải Pace người thật:",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        androidx.compose.foundation.lazy.LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val rangePresets = listOf(
+                                Triple(4.0f, 15.0f, "4:00 - 15:00 (Toàn dải)"),
+                                Triple(4.3f, 8.5f, "4:20 - 8:30 (Thể thao & Bứt tốc)"),
+                                Triple(5.5f, 11.5f, "5:30 - 11:30 (Sức bền cơ bản)"),
+                                Triple(6.0f, 14.0f, "6:00 - 14:00 (Thư giãn nhẹ nhàng)")
+                            )
+                            items(rangePresets.size) { idx ->
+                                val (minP, maxP, label) = rangePresets[idx]
+                                val isSelected = kotlin.math.abs(config.minPaceMinPerKm - minP) < 0.3f &&
+                                        kotlin.math.abs(config.maxPaceMinPerKm - maxP) < 0.3f
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        onConfigChange(
+                                            config.copy(
+                                                minPaceMinPerKm = minP,
+                                                maxPaceMinPerKm = maxP
+                                            )
+                                        )
+                                    },
+                                    label = { Text(label, fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Color(0xFF0284C7),
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        // Single Fixed Pace mode
+                        val currentPaceMin = com.example.util.GeoUtils.speedKmhToPaceMinutes(config.speedKmh)
+                        Text(
+                            text = "Nhịp độ cố định (Pace): ${com.example.util.GeoUtils.formatPace(config.speedKmh)} (${String.format(java.util.Locale.US, "%.1f", config.speedKmh)} km/h)",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8),
+                            fontSize = 14.sp
+                        )
+                        Slider(
+                            value = currentPaceMin.toFloat(),
+                            onValueChange = { paceMin ->
+                                val newSpeed = com.example.util.GeoUtils.paceMinutesToSpeedKmh(paceMin.toDouble())
+                                onConfigChange(config.copy(speedKmh = newSpeed))
+                            },
+                            valueRange = 4.0f..15.0f,
+                            steps = 109,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF38BDF8),
+                                activeTrackColor = Color(0xFF0284C7),
+                                inactiveTrackColor = Color(0xFF334155)
+                            )
+                        )
+                    }
                 }
             }
 
@@ -260,7 +332,7 @@ fun SimulationSettingsSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Periodic 10-Minute Rest (Replaces annoying waypoint dwell pauses)
+            // Randomized Rest Card (10-20s pause, random 6-12 min interval)
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                 shape = RoundedCornerShape(12.dp),
@@ -273,8 +345,8 @@ fun SimulationSettingsSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Tự động dừng nghỉ 5-10s mỗi 10 phút", fontWeight = FontWeight.Bold, color = Color(0xFFFBBF24))
-                            Text("Chạy mượt qua các mốc, chỉ tự động nghỉ ngắn 5-10s sau mỗi 10 phút", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                            Text("Tự động dừng nghỉ 10-20s ngẫu nhiên", fontWeight = FontWeight.Bold, color = Color(0xFFFBBF24))
+                            Text("Nghỉ ngắn 10-20s ngẫu nhiên sau mỗi 6-12 phút chạy (không bị cố định máy móc, tốc độ giảm và tăng dần mượt mà)", color = Color(0xFF94A3B8), fontSize = 11.sp)
                         }
                         Switch(
                             checked = config.enablePeriodicRest10m,
@@ -286,7 +358,7 @@ fun SimulationSettingsSheet(
                     if (config.enablePeriodicRest10m) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "⚡ Đã tắt dừng chờ 5s tại các mốc: Người chạy lướt thẳng liên tục và chạy vòng lặp (Loop).",
+                            text = "⚡ Đã tắt dừng chờ 5s tại các mốc: Người chạy lướt thẳng liên tục và chạy vòng lặp (Loop). Khi nghỉ, nhịp tim và bước chạy hạ dần tự nhiên.",
                             color = Color(0xFF34D399),
                             fontSize = 11.sp
                         )

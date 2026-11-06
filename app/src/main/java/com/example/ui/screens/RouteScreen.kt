@@ -1,4 +1,4 @@
-﻿package com.example.ui.screens
+package com.example.ui.screens
 
 import android.content.Context
 import android.content.Intent
@@ -50,6 +50,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -158,18 +159,28 @@ fun RouteScreen(
                 ) {
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            val paceTitle = if (simulationConfig.enablePaceRange) {
+                                val minP = GeoUtils.formatPaceFromMinutes(simulationConfig.minPaceMinPerKm.toDouble())
+                                val maxP = GeoUtils.formatPaceFromMinutes(simulationConfig.maxPaceMinPerKm.toDouble())
+                                "Dải Pace: $minP - $maxP"
+                            } else {
+                                "Pace: ${GeoUtils.formatPace(simulationConfig.speedKmh)}"
+                            }
                             Text(
-                                text = "Pace: ${GeoUtils.formatPace(simulationConfig.speedKmh)}",
+                                text = paceTitle,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF38BDF8),
-                                fontSize = 16.sp
+                                fontSize = 15.sp
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "(${String.format(java.util.Locale.US, "%.1f", simulationConfig.speedKmh)} km/h)",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 12.sp
-                            )
+                            if (simulationProgress.status != SimulationStatus.IDLE && simulationProgress.currentSpeedKmh > 0.5f) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "(${GeoUtils.formatPace(simulationProgress.currentSpeedKmh)})",
+                                    color = Color(0xFF34D399),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp
+                                )
+                            }
                             if (simulationConfig.enableHeartRateSimulation) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
@@ -181,7 +192,11 @@ fun RouteScreen(
                             }
                         }
                         Text(
-                            text = "Ước tính di chuyển 1 lượt: ${GeoUtils.formatDuration(totalTimeSeconds)}",
+                            text = if (simulationConfig.enablePaceRange) {
+                                "Biến thiên mọi pace theo quãng đường & thời gian"
+                            } else {
+                                "Ước tính di chuyển 1 lượt: ${GeoUtils.formatDuration(totalTimeSeconds)}"
+                            },
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp
                         )
@@ -203,76 +218,131 @@ fun RouteScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // Pace Slider (4:00 min/km to 15:00 min/km)
-                val currentPaceMin = GeoUtils.speedKmhToPaceMinutes(simulationConfig.speedKmh)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "4p/km",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Slider(
-                        value = currentPaceMin.toFloat(),
-                        onValueChange = { paceMin ->
-                            val newSpeed = GeoUtils.paceMinutesToSpeedKmh(paceMin.toDouble())
-                            viewModel.updateConfig(simulationConfig.copy(speedKmh = newSpeed))
-                        },
-                        valueRange = 4.0f..15.0f,
-                        steps = 109,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 6.dp),
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color(0xFF38BDF8),
-                            activeTrackColor = Color(0xFF0284C7),
-                            inactiveTrackColor = Color(0xFF334155)
-                        )
-                    )
-                    Text(
-                        text = "15p/km",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                // Quick Pace Presets Row (4:00 - 15:00 min/km)
-                androidx.compose.foundation.lazy.LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val presets = listOf(
-                        4.0 to "Pace 4:00",
-                        4.5 to "Pace 4:30",
-                        5.0 to "Pace 5:00",
-                        5.5 to "Pace 5:30",
-                        6.0 to "Pace 6:00",
-                        7.0 to "Pace 7:00",
-                        8.5 to "Pace 8:30",
-                        10.0 to "Pace 10:00",
-                        12.0 to "Pace 12:00",
-                        15.0 to "Pace 15:00"
-                    )
-                    items(presets) { (pMin, label) ->
-                        val isSelected = kotlin.math.abs(currentPaceMin - pMin) < 0.25
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                val newSpeed = GeoUtils.paceMinutesToSpeedKmh(pMin)
-                                viewModel.updateConfig(simulationConfig.copy(speedKmh = newSpeed))
+                if (simulationConfig.enablePaceRange) {
+                    val currentRange = simulationConfig.minPaceMinPerKm.coerceIn(4.0f, 15.0f)..simulationConfig.maxPaceMinPerKm.coerceIn(4.0f, 15.0f)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("4p/km", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                        RangeSlider(
+                            value = currentRange,
+                            onValueChange = { range ->
+                                viewModel.updateConfig(
+                                    simulationConfig.copy(
+                                        minPaceMinPerKm = range.start,
+                                        maxPaceMinPerKm = range.endInclusive
+                                    )
+                                )
                             },
-                            label = { Text(label, fontSize = 10.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0xFF0284C7),
-                                selectedLabelColor = Color.White
+                            valueRange = 4.0f..15.0f,
+                            steps = 21,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 6.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF38BDF8),
+                                activeTrackColor = Color(0xFF0284C7),
+                                inactiveTrackColor = Color(0xFF334155)
                             )
                         )
+                        Text("15p/km", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    }
+
+                    // Quick Range presets
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val rangePresets = listOf(
+                            Triple(4.0f, 15.0f, "4:00 - 15:00 (Toàn dải)"),
+                            Triple(4.3f, 8.5f, "4:20 - 8:30 (Thể thao)"),
+                            Triple(5.5f, 11.5f, "5:30 - 11:30 (Sức bền)"),
+                            Triple(6.0f, 14.0f, "6:00 - 14:00 (Thư giãn)")
+                        )
+                        items(rangePresets) { (minP, maxP, label) ->
+                            val isSelected = kotlin.math.abs(simulationConfig.minPaceMinPerKm - minP) < 0.3f &&
+                                    kotlin.math.abs(simulationConfig.maxPaceMinPerKm - maxP) < 0.3f
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    viewModel.updateConfig(
+                                        simulationConfig.copy(
+                                            minPaceMinPerKm = minP,
+                                            maxPaceMinPerKm = maxP
+                                        )
+                                    )
+                                },
+                                label = { Text(label, fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF0284C7),
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
+                } else {
+                    // Single Pace Slider (4:00 min/km to 15:00 min/km)
+                    val currentPaceMin = GeoUtils.speedKmhToPaceMinutes(simulationConfig.speedKmh)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("4p/km", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                        Slider(
+                            value = currentPaceMin.toFloat(),
+                            onValueChange = { paceMin ->
+                                val newSpeed = GeoUtils.paceMinutesToSpeedKmh(paceMin.toDouble())
+                                viewModel.updateConfig(simulationConfig.copy(speedKmh = newSpeed))
+                            },
+                            valueRange = 4.0f..15.0f,
+                            steps = 109,
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 6.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF38BDF8),
+                                activeTrackColor = Color(0xFF0284C7),
+                                inactiveTrackColor = Color(0xFF334155)
+                            )
+                        )
+                        Text("15p/km", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                    }
+
+                    // Quick Pace Presets Row (4:00 - 15:00 min/km)
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val presets = listOf(
+                            4.0 to "Pace 4:00",
+                            4.5 to "Pace 4:30",
+                            5.0 to "Pace 5:00",
+                            5.5 to "Pace 5:30",
+                            6.0 to "Pace 6:00",
+                            7.0 to "Pace 7:00",
+                            8.5 to "Pace 8:30",
+                            10.0 to "Pace 10:00",
+                            12.0 to "Pace 12:00",
+                            15.0 to "Pace 15:00"
+                        )
+                        items(presets) { (pMin, label) ->
+                            val isSelected = kotlin.math.abs(currentPaceMin - pMin) < 0.25
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    val newSpeed = GeoUtils.paceMinutesToSpeedKmh(pMin)
+                                    viewModel.updateConfig(simulationConfig.copy(speedKmh = newSpeed))
+                                },
+                                label = { Text(label, fontSize = 10.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Color(0xFF0284C7),
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
                     }
                 }
 

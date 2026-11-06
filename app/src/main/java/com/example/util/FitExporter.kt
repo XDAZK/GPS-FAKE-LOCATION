@@ -341,12 +341,35 @@ object FitExporter {
                 // Elevation (Độ cao): STRICTLY 1.0m - 5.0m, Total ascent max 7m
                 altMeters = GeoUtils.calculateNaturalAltitude(currentDistMeters)
 
-                // Dynamic speed intervals (changes pace across cycles - warmup, surge, cruise, recovery)
-                instantSpeedMps = (GeoUtils.getDynamicRunningSpeed(effectiveSpeedKmh, s.toLong(), true) / 3.6).coerceIn(1.0, 7.5)
+                // Dynamic speed intervals: Pace Range traversal or natural speed variance
+                val instantSpeedKmh = if (config?.enablePaceRange == true) {
+                    GeoUtils.getPaceRangeDynamicSpeed(
+                        distanceCoveredMeters = currentDistMeters,
+                        secondsElapsed = s.toLong(),
+                        minPaceMinPerKm = config.minPaceMinPerKm,
+                        maxPaceMinPerKm = config.maxPaceMinPerKm,
+                        enableWarmup = true
+                    )
+                } else {
+                    GeoUtils.getDynamicRunningSpeed(effectiveSpeedKmh, s.toLong(), true)
+                }
+                instantSpeedMps = (instantSpeedKmh / 3.6).coerceIn(1.0, 7.5)
 
                 // Dynamic Heart Rate with physiological swing
                 val warmupProgress = (s.toDouble() / warmupDurationSec).coerceIn(0.0, 1.0)
-                val baseHr = warmupStartBpm + (targetCruiseBpm - warmupStartBpm) * sin(warmupProgress * (Math.PI / 2.0))
+                val baseHr = if (config?.enablePaceRange == true) {
+                    val speedHrTarget = 100.0 + ((instantSpeedKmh - 4.0) / 10.0).coerceIn(0.0, 1.3) * 55.0
+                    warmupStartBpm + (speedHrTarget - warmupStartBpm) * sin(warmupProgress * (Math.PI / 2.0))
+                } else {
+                    warmupStartBpm + (targetCruiseBpm - warmupStartBpm) * sin(warmupProgress * (Math.PI / 2.0))
+                }
+
+                // Dynamic Cadence responsive to speed
+                val targetSpm = if (config?.enablePaceRange == true) {
+                    120.0 + ((instantSpeedKmh - 4.0) / 10.0).coerceIn(0.0, 1.3) * 58.0
+                } else {
+                    baseRunningSpm
+                }
 
                 // Occasional recovery dip every ~120s ("lâu lâu lệch 10 như nghỉ ngơi")
                 val cycleTime = (s % 120).toDouble()
@@ -361,10 +384,10 @@ object FitExporter {
                 fitCadDrift = fitCadDrift.coerceIn(-2.5, 2.5)
 
                 val hrDip = -9.5 * dipFraction
-                instantHr = (baseHr + fitHrvDrift + hrDip).roundToInt().coerceIn(98, 195)
+                instantHr = (baseHr + fitHrvDrift + hrDip).roundToInt().coerceIn(90, 195)
 
                 val cadDip = -10.0 * dipFraction
-                instantSpm = (baseRunningSpm + fitCadDrift + cadDip).roundToInt().coerceIn(120, 205)
+                instantSpm = (targetSpm + fitCadDrift + cadDip).roundToInt().coerceIn(115, 205)
             }
 
             recordedSamples.add(FitTrackSample(fitTime, currentDistMeters, instantSpeedMps, instantHr, instantSpm))

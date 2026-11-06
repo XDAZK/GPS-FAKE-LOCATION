@@ -31,14 +31,20 @@ enum class HeartRateMode(val title: String, val minBpm: Int, val maxBpm: Int, va
 
 data class SimulationConfig(
     val speedKmh: Float = 10.9f, // Default Pace 5:30 min/km (~10.9 km/h)
+    // Pace Range settings (Dải nhịp độ chạy: 4:00 - 15:00 min/km)
+    val enablePaceRange: Boolean = true, // Tự động chạy biến thiên qua mọi pace trong dải thay vì giữ 1 pace duy nhất
+    val minPaceMinPerKm: Float = 4.5f,   // Pace nhanh nhất trong dải (ví dụ 4:30 min/km ~ 13.3 km/h)
+    val maxPaceMinPerKm: Float = 12.0f,  // Pace chậm nhất trong dải (ví dụ 12:00 min/km ~ 5.0 km/h)
     val enableNaturalSpeedVariance: Boolean = true, // Natural human speed variance
     val enableIntervalPaceShifting: Boolean = true, // Dynamic interval shifts (warmup, surge, cruise, recovery)
     val enableGpsJitter: Boolean = true, // Natural GPS drift along track
     val maxLateralDriftMeters: Float = 2.0f, // Độ lệch người chạy lệch tối đa 2m
     val enableRandomPause: Boolean = false, // Không dừng chờ tại từng waypoint
-    val enablePeriodicRest10m: Boolean = true, // Tự động dừng nghỉ 5-10s sau mỗi 10 phút chạy
-    val minPauseSeconds: Int = 5,
-    val maxPauseSeconds: Int = 10,
+    val enablePeriodicRest10m: Boolean = true, // Tự động dừng nghỉ ngẫu nhiên 10-20s (không cố định máy móc)
+    val minRestIntervalMinutes: Int = 6, // Khoảng thời gian chạy ngẫu nhiên trước khi nghỉ (6 - 12 phút)
+    val maxRestIntervalMinutes: Int = 12,
+    val minPauseSeconds: Int = 10, // Mỗi lần nghỉ 10 - 20s
+    val maxPauseSeconds: Int = 20,
     val enableBreathingVibration: Boolean = false,
     val vibrationPattern: VibrationCadence = VibrationCadence.OFF,
     val loopRoute: Boolean = true, // Mặc định chạy Loop (đi - về liên tục)

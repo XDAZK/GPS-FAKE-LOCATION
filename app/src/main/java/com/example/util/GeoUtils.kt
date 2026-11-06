@@ -176,6 +176,54 @@ object GeoUtils {
     }
 
     /**
+     * Dynamically traverses through all paces in the user's selected Pace Range [minPace, maxPace]
+     * across total distance and time (warmup, aerobic cruise, interval surges, recovery).
+     * Prevents flat horizontal pace/speed charts on Strava/Garmin.
+     *
+     * @param distanceCoveredMeters Total distance covered so far
+     * @param secondsElapsed Total seconds elapsed in simulation
+     * @param minPaceMinPerKm Fastest pace in the range (e.g. 4.0 - 5.0 min/km)
+     * @param maxPaceMinPerKm Slowest pace in the range (e.g. 10.0 - 15.0 min/km)
+     * @param enableWarmup Whether to include a smooth warmup ramp at start
+     */
+    fun getPaceRangeDynamicSpeed(
+        distanceCoveredMeters: Double,
+        secondsElapsed: Long,
+        minPaceMinPerKm: Float,
+        maxPaceMinPerKm: Float,
+        enableWarmup: Boolean = true
+    ): Float {
+        val pFast = minPaceMinPerKm.coerceAtLeast(3.5f).coerceAtMost(15.0f)
+        val pSlow = maxPaceMinPerKm.coerceAtLeast(3.5f).coerceAtMost(16.0f)
+        val fastestPace = kotlin.math.min(pFast, pSlow).toDouble()
+        val slowestPace = kotlin.math.max(pFast, pSlow).toDouble()
+
+        val vMax = paceMinutesToSpeedKmh(fastestPace) // e.g. 15.0 km/h (Pace 4:00)
+        val vMin = paceMinutesToSpeedKmh(slowestPace) // e.g. 4.0 km/h (Pace 15:00)
+
+        val d = distanceCoveredMeters
+        val t = secondsElapsed.toDouble()
+
+        // Multi-frequency distance & interval waves exploring the full spectrum [0.0, 1.0]
+        val wDist1 = sin(d * (2.0 * Math.PI / 1850.0)) // ~1.85 km per cycle (lap variations)
+        val wDist2 = cos(d * (2.0 * Math.PI / 4300.0)) // ~4.3 km broader arc
+        val wDist3 = sin(d * (2.0 * Math.PI / 800.0))  // ~800m split rhythm
+        val wTime = sin(t * (2.0 * Math.PI / 260.0))   // ~4.3 min interval wave
+
+        val rawNormalized = 0.44 + 0.28 * wDist1 + 0.18 * wDist2 + 0.06 * wDist3 + 0.04 * wTime
+        val normalized = rawNormalized.coerceIn(0.02, 0.98)
+
+        var speed = (vMin + normalized * (vMax - vMin)).toFloat()
+
+        if (enableWarmup && t < 60.0) {
+            val warmupRatio = (t / 60.0).coerceIn(0.0, 1.0).toFloat()
+            speed = vMin + (speed - vMin) * warmupRatio
+        }
+
+        return speed.coerceIn(3.0f, 22.0f)
+    }
+
+    /**
      * Human-like running speed simulation with natural pacing:
      * - Warmup ramp in the first 50 seconds
      * - Steady cruising pace with subtle organic variation rather than cyclic sine oscillations

@@ -44,16 +44,19 @@ class HeartRateSimulator(context: Context) {
         if (!config.enableHeartRateSimulation) return 72
 
         val targetBpm: Float = if (isResting || speedKmh < 0.5f) {
-            68f
+            74f // Realistic standing recovery heart rate
         } else {
-            when (config.heartRateMode) {
+            // Gradual cardiac drift due to body heat & fatigue (+0 to +7 BPM over 1.5h)
+            val fatigueDrift = ((secondsElapsed / 1800.0).coerceAtMost(3.0) * 2.2f).toFloat()
+
+            val speedBase = when (config.heartRateMode) {
                 HeartRateMode.AUTO_BY_SPEED -> {
                     when {
-                        speedKmh < 4.5f -> 88f + (speedKmh / 4.5f) * 18f // 88 - 106 BPM (Walking)
-                        speedKmh < 9.5f -> 108f + ((speedKmh - 4.5f) / 5.0f) * 28f // 108 - 136 BPM (Jogging/Zone 2)
-                        speedKmh < 15.0f -> 136f + ((speedKmh - 9.5f) / 5.5f) * 28f // 136 - 164 BPM (Running/Zone 3-4)
-                        speedKmh < 22.0f -> 164f + ((speedKmh - 15.0f) / 7.0f) * 20f // 164 - 184 BPM (Sprint/Interval)
-                        else -> 178f
+                        speedKmh < 4.5f -> 86f + (speedKmh / 4.5f) * 18f // 86 - 104 BPM (Walking)
+                        speedKmh < 8.5f -> 104f + ((speedKmh - 4.5f) / 4.0f) * 24f // 104 - 128 BPM (Jogging/Zone 2)
+                        speedKmh < 13.0f -> 128f + ((speedKmh - 8.5f) / 4.5f) * 30f // 128 - 158 BPM (Running/Zone 3-4)
+                        speedKmh < 18.0f -> 158f + ((speedKmh - 13.0f) / 5.0f) * 24f // 158 - 182 BPM (Sprint/Interval)
+                        else -> 182f
                     }
                 }
                 HeartRateMode.ZONE_1_WARMUP -> 102f
@@ -63,10 +66,11 @@ class HeartRateSimulator(context: Context) {
                 HeartRateMode.ZONE_5_MAX -> 182f
                 HeartRateMode.CUSTOM_FIXED -> config.customHeartRateBpm.toFloat()
             }
+            speedBase + fatigueDrift
         }
 
         // Physiological cardiac inertia (asymmetric: slower recovery than ramp up)
-        val cardiacLagRate = if (targetBpm >= previousBpm) 0.035f else 0.016f
+        val cardiacLagRate = if (targetBpm >= previousBpm) 0.040f else 0.022f
         previousBpm += (targetBpm - previousBpm) * cardiacLagRate
 
         // Non-periodic organic HRV noise (AR-1 / Ornstein-Uhlenbeck process, ±2.5 BPM)

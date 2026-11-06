@@ -53,6 +53,7 @@ class MockLocationService : Service() {
     private var runnerLateralOffsetMeters = 0.0
     private var smoothedRunningSpeedKmh = 0f
     private var speedOrganicNoise = 0.0
+    private var nextRestAtElapsedSeconds = 0L
     private val activeTrackList = ArrayList<GeoPoint>()
 
     companion object {
@@ -378,10 +379,18 @@ class MockLocationService : Service() {
             routeLegProgressMeters = 0.0
             routeDistanceCovered = 0.0
             runnerLateralOffsetMeters = 0.0
-            smoothedRunningSpeedKmh = (config.speedKmh * 0.72f).coerceAtLeast(4.0f)
+            val startSpeed = if (config.enablePaceRange) {
+                GeoUtils.paceMinutesToSpeedKmh(config.maxPaceMinPerKm.toDouble())
+            } else {
+                (config.speedKmh * 0.72f).coerceAtLeast(4.0f)
+            }
+            smoothedRunningSpeedKmh = startSpeed
             speedOrganicNoise = 0.0
             accumulatedSteps = 0.0
             accumulatedCalories = 0.0
+            val minRestSec = config.minRestIntervalMinutes * 60L
+            val maxRestSec = (config.maxRestIntervalMinutes + 1) * 60L
+            nextRestAtElapsedSeconds = Random.nextLong(minRestSec.coerceAtLeast(180L), maxRestSec.coerceAtLeast(360L))
             heartRateSimulator.reset(initialBpm = 75f)
             CadenceCalculator.reset()
             synchronized(activeTrackList) {
@@ -428,12 +437,22 @@ class MockLocationService : Service() {
                     simulationElapsedSeconds++
                     val activeConf = _activeConfig.value
 
-                    // Natural warmup in the first 50s (ramps smoothly from 72% up to 100%)
-                    val warmupFactor = if (simulationElapsedSeconds < 50L) {
-                        (0.72 + 0.28 * (simulationElapsedSeconds / 50.0)).toFloat()
-                    } else 1.0f
-
-                    val targetBaseSpeed = (activeConf.speedKmh * warmupFactor)
+                    // Dynamic pace calculation: either dynamic across Pace Range (e.g. 4:00 - 15:00 min/km)
+                    // or single pace with smooth initial warmup
+                    val targetBaseSpeed = if (activeConf.enablePaceRange) {
+                        GeoUtils.getPaceRangeDynamicSpeed(
+                            distanceCoveredMeters = routeDistanceCovered,
+                            secondsElapsed = simulationElapsedSeconds,
+                            minPaceMinPerKm = activeConf.minPaceMinPerKm,
+                            maxPaceMinPerKm = activeConf.maxPaceMinPerKm,
+                            enableWarmup = true
+                        )
+                    } else {
+                        val warmupFactor = if (simulationElapsedSeconds < 50L) {
+                            (0.72 + 0.28 * (simulationElapsedSeconds / 50.0)).toFloat()
+                        } else 1.0f
+                        (activeConf.speedKmh * warmupFactor)
+                    }
 
                     // Human physical acceleration/deceleration momentum (avoids sharp cliff drops!)
                     // Deceleration is gradual (~0.08 km/h per sec), taking 50-70s to slowly descend
@@ -574,9 +593,12 @@ class MockLocationService : Service() {
 
                     delay(1000L)
 
-                    // Auto-pause 5-10s every 10 minutes (600s)
-                    if (activeConf.enablePeriodicRest10m && simulationElapsedSeconds > 0 && simulationElapsedSeconds % 600L == 0L) {
-                        val restDurationSec = Random.nextInt(5, 11) // 5 to 10 seconds
+                    // Randomized rest pause (10-20s duration, randomized interval e.g. every 6-12 minutes)
+                    if (activeConf.enablePeriodicRest10m && simulationElapsedSeconds >= nextRestAtElapsedSeconds) {
+                        val restDurationSec = Random.nextInt(
+                            activeConf.minPauseSeconds.coerceAtLeast(10),
+                            (activeConf.maxPauseSeconds + 1).coerceAtLeast(20)
+                        ) // 10 to 20 seconds
                         for (sec in restDurationSec downTo 1) {
                             if (!isActive) break
 
@@ -592,12 +614,13 @@ class MockLocationService : Service() {
                                 pauseRemainingSeconds = sec,
                                 currentSpeedKmh = 0f,
                                 currentHeartRateBpm = restingBpm,
+                                currentCadenceSpm = 0,
                                 distanceCoveredMeters = routeDistanceCovered,
                                 isLoopReversing = routeIsReversing
                             )
 
                             mockLocationManager.pushMockLocation(
-                                geoPoint = jitteredPoint.copy(heartRate = restingBpm),
+                                geoPoint = jitteredPoint.copy(heartRate = restingBpm, cadence = 0),
                                 speedKmh = 0f,
                                 bearing = bearing,
                                 caloriesKcal = accumulatedCalories,
@@ -605,7 +628,7 @@ class MockLocationService : Service() {
                             )
 
                             val restNotif = buildNotification(
-                                title = "GeoSim: Tạm nghỉ 5-10s (mỗi 10p) • ❤️ ${restingBpm} BPM",
+                                title = "GeoSim: Tạm nghỉ ${restDurationSec}s ngẫu nhiên • ❤️ ${restingBpm} BPM",
                                 content = "Đã chạy: ${GeoUtils.formatDistance(routeDistanceCovered)} | Nghỉ: ${sec}s...",
                                 progressPercent = lapPercent
                             )
@@ -614,6 +637,10 @@ class MockLocationService : Service() {
                             delay(1000L)
                         }
                         smoothedRunningSpeedKmh = 2.5f // Smooth acceleration back up after rest
+                        val minRestSec = activeConf.minRestIntervalMinutes * 60L
+                        val maxRestSec = (activeConf.maxRestIntervalMinutes + 1) * 60L
+                        val nextIntervalSec = Random.nextLong(minRestSec.coerceAtLeast(180L), maxRestSec.coerceAtLeast(360L))
+                        nextRestAtElapsedSeconds = simulationElapsedSeconds + nextIntervalSec
                     }
                 }
 
