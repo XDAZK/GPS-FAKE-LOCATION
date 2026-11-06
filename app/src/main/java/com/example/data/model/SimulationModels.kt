@@ -1,4 +1,4 @@
-﻿package com.example.data.model
+package com.example.data.model
 
 import java.io.Serializable
 
@@ -35,12 +35,13 @@ data class SimulationConfig(
     val enableIntervalPaceShifting: Boolean = true, // Dynamic interval shifts (warmup, surge, cruise, recovery)
     val enableGpsJitter: Boolean = true, // Natural GPS drift along track
     val maxLateralDriftMeters: Float = 2.0f, // Độ lệch người chạy lệch tối đa 2m
-    val enableRandomPause: Boolean = true, // Random rest at waypoints
+    val enableRandomPause: Boolean = false, // Không dừng chờ tại từng waypoint
+    val enablePeriodicRest10m: Boolean = true, // Tự động dừng nghỉ 5-10s sau mỗi 10 phút chạy
     val minPauseSeconds: Int = 5,
-    val maxPauseSeconds: Int = 20,
+    val maxPauseSeconds: Int = 10,
     val enableBreathingVibration: Boolean = false,
     val vibrationPattern: VibrationCadence = VibrationCadence.OFF,
-    val loopRoute: Boolean = false,
+    val loopRoute: Boolean = true, // Mặc định chạy Loop (đi - về liên tục)
     val isolateRealLocation: Boolean = true, // Override both GPS & Network
     // Heart Rate Simulation features
     val enableHeartRateSimulation: Boolean = true,

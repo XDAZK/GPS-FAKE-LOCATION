@@ -570,12 +570,54 @@ class MockLocationService : Service() {
                     notificationManager.notify(NOTIFICATION_ID, notif)
 
                     delay(1000L)
+
+                    // Auto-pause 5-10s every 10 minutes (600s)
+                    if (activeConf.enablePeriodicRest10m && simulationElapsedSeconds > 0 && simulationElapsedSeconds % 600L == 0L) {
+                        val restDurationSec = Random.nextInt(5, 11) // 5 to 10 seconds
+                        for (sec in restDurationSec downTo 1) {
+                            if (!isActive) break
+
+                            val restingBpm = heartRateSimulator.calculateBpm(
+                                0f,
+                                isResting = true,
+                                config = activeConf,
+                                secondsElapsed = simulationElapsedSeconds
+                            )
+
+                            _simulationProgress.value = _simulationProgress.value.copy(
+                                status = SimulationStatus.RESTING,
+                                pauseRemainingSeconds = sec,
+                                currentSpeedKmh = 0f,
+                                currentHeartRateBpm = restingBpm,
+                                distanceCoveredMeters = routeDistanceCovered,
+                                isLoopReversing = routeIsReversing
+                            )
+
+                            mockLocationManager.pushMockLocation(
+                                geoPoint = jitteredPoint.copy(heartRate = restingBpm),
+                                speedKmh = 0f,
+                                bearing = bearing,
+                                caloriesKcal = accumulatedCalories,
+                                steps = accumulatedSteps.toLong()
+                            )
+
+                            val restNotif = buildNotification(
+                                title = "GeoSim: Tạm nghỉ 5-10s (mỗi 10p) • ❤️ ${restingBpm} BPM",
+                                content = "Đã chạy: ${GeoUtils.formatDistance(routeDistanceCovered)} | Nghỉ: ${sec}s...",
+                                progressPercent = lapPercent
+                            )
+                            notificationManager.notify(NOTIFICATION_ID, restNotif)
+
+                            delay(1000L)
+                        }
+                        smoothedRunningSpeedKmh = 2.5f // Smooth acceleration back up after rest
+                    }
                 }
 
                 routeCurrentPos = nextWaypoint
                 routeLegProgressMeters = 0.0
 
-                // Advance or reverse waypoint index
+                // Advance or reverse waypoint index (Chạy xuyên suốt qua mốc, không dừng chờ 5s)
                 if (!routeIsReversing) {
                     routeCurrentWaypointIdx++
                     if (routeCurrentWaypointIdx >= waypoints.size - 1) {
@@ -598,49 +640,6 @@ class MockLocationService : Service() {
                             break
                         }
                     }
-                }
-
-                // Randomized rest / dwell time at waypoint
-                if (currentConfig.enableRandomPause) {
-                    val pauseDurationSec = if (currentConfig.maxPauseSeconds > currentConfig.minPauseSeconds) {
-                        Random.nextInt(currentConfig.minPauseSeconds, currentConfig.maxPauseSeconds + 1)
-                    } else {
-                        currentConfig.minPauseSeconds
-                    }
-
-                    for (sec in pauseDurationSec downTo 1) {
-                        if (!isActive) break
-
-                        val restingBpm = heartRateSimulator.calculateBpm(0f, isResting = true, config = currentConfig, secondsElapsed = simulationElapsedSeconds)
-
-                        _simulationProgress.value = _simulationProgress.value.copy(
-                            status = SimulationStatus.RESTING,
-                            pauseRemainingSeconds = sec,
-                            currentSpeedKmh = 0f,
-                            currentHeartRateBpm = restingBpm,
-                            distanceCoveredMeters = routeDistanceCovered,
-                            isLoopReversing = routeIsReversing
-                        )
-
-                        mockLocationManager.pushMockLocation(
-                            geoPoint = GeoUtils.applyGpsJitter(nextWaypoint, currentConfig.enableGpsJitter, currentConfig.maxLateralDriftMeters).copy(heartRate = restingBpm),
-                            speedKmh = 0f,
-                            bearing = bearing,
-                            caloriesKcal = accumulatedCalories,
-                            steps = accumulatedSteps.toLong()
-                        )
-
-                        val notif = buildNotification(
-                            title = "GeoSim: Tạm nghỉ tại mốc • ❤️ ${restingBpm} BPM",
-                            content = "Đã chạy: ${GeoUtils.formatDistance(routeDistanceCovered)} | Nghỉ: ${sec}s...",
-                            progressPercent = _simulationProgress.value.progressPercent
-                        )
-                        notificationManager.notify(NOTIFICATION_ID, notif)
-
-                        delay(1000L)
-                    }
-                    // Transition smoothly back up from stop
-                    smoothedRunningSpeedKmh = 2.5f
                 }
             }
 

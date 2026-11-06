@@ -260,7 +260,7 @@ fun SimulationSettingsSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Randomized Pause / Dwell Time
+            // Periodic 10-Minute Rest (Replaces annoying waypoint dwell pauses)
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
                 shape = RoundedCornerShape(12.dp),
@@ -273,40 +273,23 @@ fun SimulationSettingsSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Dừng nghỉ ngẫu nhiên tại mỗi điểm đến", fontWeight = FontWeight.Bold, color = Color(0xFFFBBF24))
-                            Text("Mô phỏng dừng đèn đỏ, giao lộ hoặc nghỉ giữa chặng", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                            Text("Tự động dừng nghỉ 5-10s mỗi 10 phút", fontWeight = FontWeight.Bold, color = Color(0xFFFBBF24))
+                            Text("Chạy mượt qua các mốc, chỉ tự động nghỉ ngắn 5-10s sau mỗi 10 phút", color = Color(0xFF94A3B8), fontSize = 11.sp)
                         }
                         Switch(
-                            checked = config.enableRandomPause,
-                            onCheckedChange = { onConfigChange(config.copy(enableRandomPause = it)) },
+                            checked = config.enablePeriodicRest10m,
+                            onCheckedChange = { onConfigChange(config.copy(enablePeriodicRest10m = it)) },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFFFBBF24))
                         )
                     }
 
-                    if (config.enableRandomPause) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                    if (config.enablePeriodicRest10m) {
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Khoảng thời gian nghỉ: ${config.minPauseSeconds}s - ${config.maxPauseSeconds}s",
-                            color = Color(0xFFFEF3C7),
-                            fontSize = 12.sp
+                            text = "⚡ Đã tắt dừng chờ 5s tại các mốc: Người chạy lướt thẳng liên tục và chạy vòng lặp (Loop).",
+                            color = Color(0xFF34D399),
+                            fontSize = 11.sp
                         )
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
-                                selected = config.minPauseSeconds == 5 && config.maxPauseSeconds == 15,
-                                onClick = { onConfigChange(config.copy(minPauseSeconds = 5, maxPauseSeconds = 15)) },
-                                label = { Text("5 - 15 giây") }
-                            )
-                            FilterChip(
-                                selected = config.minPauseSeconds == 10 && config.maxPauseSeconds == 30,
-                                onClick = { onConfigChange(config.copy(minPauseSeconds = 10, maxPauseSeconds = 30)) },
-                                label = { Text("10 - 30 giây") }
-                            )
-                            FilterChip(
-                                selected = config.minPauseSeconds == 30 && config.maxPauseSeconds == 60,
-                                onClick = { onConfigChange(config.copy(minPauseSeconds = 30, maxPauseSeconds = 60)) },
-                                label = { Text("30 - 60 giây") }
-                            )
-                        }
                     }
                 }
             }
