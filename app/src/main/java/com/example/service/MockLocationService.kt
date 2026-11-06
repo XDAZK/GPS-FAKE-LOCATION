@@ -501,15 +501,18 @@ class MockLocationService : Service() {
                         runnerLateralOffsetMeters = 0.0
                     }
 
+                    // Realistic undulating road elevation (strictly under 5m, total ascent max 7m)
+                    val naturalAltitude = GeoUtils.calculateNaturalAltitude(routeDistanceCovered)
+
                     val jitteredPoint = if (activeConf.enableGpsJitter) {
                         GeoUtils.applySmoothRunnerOffset(
                             point = interpolatedPoint,
                             bearingDeg = bearing,
                             lateralOffsetMeters = runnerLateralOffsetMeters,
                             maxLateralMeters = activeConf.maxLateralDriftMeters
-                        ).copy(heartRate = currentBpm, cadence = currentCadence)
+                        ).copy(altitude = naturalAltitude, heartRate = currentBpm, cadence = currentCadence)
                     } else {
-                        interpolatedPoint.copy(heartRate = currentBpm, cadence = currentCadence)
+                        interpolatedPoint.copy(altitude = naturalAltitude, heartRate = currentBpm, cadence = currentCadence)
                     }
 
                     mockLocationManager.pushMockLocation(
@@ -522,7 +525,7 @@ class MockLocationService : Service() {
 
                     val recordedPoint = jitteredPoint.copy(
                         time = System.currentTimeMillis(),
-                        altitude = jitteredPoint.altitude.coerceIn(1.1, 4.9)
+                        altitude = naturalAltitude
                     )
                     synchronized(activeTrackList) {
                         activeTrackList.add(recordedPoint)

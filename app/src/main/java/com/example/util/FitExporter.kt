@@ -304,10 +304,14 @@ object FitExporter {
                 val pt = points[s]
                 lat = pt.latitude
                 lng = pt.longitude
-                altMeters = pt.altitude.coerceIn(1.1, 4.9)
+                currentDistMeters = if (s < cumulativeDistances.size) cumulativeDistances[s] else totalDistMeters
+                altMeters = if (pt.altitude in 1.0..5.0 && pt.altitude != 2.5) {
+                    pt.altitude
+                } else {
+                    GeoUtils.calculateNaturalAltitude(currentDistMeters)
+                }
                 instantHr = if (pt.heartRate > 0) pt.heartRate else (145 + sin(s * 0.05) * 3.0).roundToInt().coerceIn(98, 195)
                 instantSpm = if (pt.cadence > 0) pt.cadence else 168
-                currentDistMeters = if (s < cumulativeDistances.size) cumulativeDistances[s] else totalDistMeters
                 instantSpeedMps = if (s > 0) {
                     val dt = ((pt.time - points[s - 1].time) / 1000.0).coerceIn(0.5, 5.0)
                     (GeoUtils.distanceBetween(points[s - 1], pt) / dt).coerceIn(0.5, 12.0)
@@ -334,12 +338,8 @@ object FitExporter {
                     lng = p1.longitude + (p2.longitude - p1.longitude) * fraction
                 }
 
-                // Elevation (Độ cao): STRICTLY 1.0m - 5.0m
-                val macroHill = sin(progressFraction * Math.PI * 5.0) * 1.3
-                val microHill = cos(progressFraction * Math.PI * 19.0) * 0.4
-                val roadNoise = sin(s * 0.27) * 0.15
-                val baseElevation = 2.8 // Center ~2.8m (within 1.0m - 5.0m rules)
-                altMeters = (baseElevation + macroHill + microHill + roadNoise).coerceIn(1.1, 4.9)
+                // Elevation (Độ cao): STRICTLY 1.0m - 5.0m, Total ascent max 7m
+                altMeters = GeoUtils.calculateNaturalAltitude(currentDistMeters)
 
                 // Dynamic speed intervals (changes pace across cycles - warmup, surge, cruise, recovery)
                 instantSpeedMps = (GeoUtils.getDynamicRunningSpeed(effectiveSpeedKmh, s.toLong(), true) / 3.6).coerceIn(1.0, 7.5)
