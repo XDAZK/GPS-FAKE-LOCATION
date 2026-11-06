@@ -285,6 +285,8 @@ object FitExporter {
             val spm: Int
         )
         val recordedSamples = ArrayList<FitTrackSample>(numSamples)
+        var fitHrvDrift = 0.0
+        var fitCadDrift = 0.0
 
         for (s in 0 until numSamples) {
             val recordTimeMillis = startTimeMillis + (s * 1000L)
@@ -351,15 +353,18 @@ object FitExporter {
                 val isDipActive = s >= 50 && cycleTime in 95.0..108.0
                 val dipFraction = if (isDipActive) sin(((cycleTime - 95.0) / 13.0) * Math.PI) else 0.0
 
-                // Steady state variation within ±3-4
-                val naturalHrv = sin(s * 0.18) * 2.2 + cos(s * 0.07) * 1.3
-                val hrDip = -9.5 * dipFraction
-                instantHr = (baseHr + naturalHrv + hrDip).roundToInt().coerceIn(98, 195)
+                // Organic AR-1 non-periodic noise (no comb teeth)
+                fitHrvDrift = fitHrvDrift * 0.92 + kotlin.random.Random.nextDouble(-0.35, 0.35)
+                fitHrvDrift = fitHrvDrift.coerceIn(-2.5, 2.5)
 
-                // Cadence: steady with ±3-4 SPM fluctuation, and ~10 SPM drop during dip
-                val cadenceDeviation = sin(s * 0.15) * 2.5 + cos(s * 0.06) * 1.2
+                fitCadDrift = fitCadDrift * 0.90 + kotlin.random.Random.nextDouble(-0.45, 0.45)
+                fitCadDrift = fitCadDrift.coerceIn(-2.5, 2.5)
+
+                val hrDip = -9.5 * dipFraction
+                instantHr = (baseHr + fitHrvDrift + hrDip).roundToInt().coerceIn(98, 195)
+
                 val cadDip = -10.0 * dipFraction
-                instantSpm = (baseRunningSpm + cadenceDeviation + cadDip).roundToInt().coerceIn(120, 205)
+                instantSpm = (baseRunningSpm + fitCadDrift + cadDip).roundToInt().coerceIn(120, 205)
             }
 
             recordedSamples.add(FitTrackSample(fitTime, currentDistMeters, instantSpeedMps, instantHr, instantSpm))

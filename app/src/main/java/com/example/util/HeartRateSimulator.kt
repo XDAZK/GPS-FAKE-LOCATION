@@ -21,11 +21,19 @@ class HeartRateSimulator(context: Context) {
     }
 
     private var previousBpm: Float = 72f
+    private var hrvDrift: Double = 0.0
+
+    fun reset(initialBpm: Float = 72f) {
+        previousBpm = initialBpm
+        hrvDrift = 0.0
+    }
 
     /**
-     * Compute realistic Heart Rate (BPM) based on speed, mode, and natural HRV with
-     * rich physiological wave dynamics (respiration RSA, Mayer blood-pressure waves, cardiac drift)
-     * so heart rate oscillates across a realistic range (10-30 BPM range) rather than being flat.
+     * Compute realistic Heart Rate (BPM) based on speed, mode, and cardiac lag.
+     * Uses physiological cardiac inertia:
+     * - Rising rate (~3.5%/s): takes 30-40s to reach higher heart rate zone
+     * - Recovery rate (~1.6%/s): takes 60-90s to slowly recover down, preventing sudden cliff drops
+     * - Organic AR(1) HRV noise: non-periodic natural biological variation, eliminates comb/barcode teeth
      */
     fun calculateBpm(
         speedKmh: Float,
@@ -36,9 +44,7 @@ class HeartRateSimulator(context: Context) {
         if (!config.enableHeartRateSimulation) return 72
 
         val targetBpm: Float = if (isResting || speedKmh < 0.5f) {
-            // Resting state with slight breathing oscillation
-            val restWave = (kotlin.math.sin(secondsElapsed * 0.25) * 3.0).toFloat()
-            68f + restWave
+            68f
         } else {
             when (config.heartRateMode) {
                 HeartRateMode.AUTO_BY_SPEED -> {
@@ -59,27 +65,29 @@ class HeartRateSimulator(context: Context) {
             }
         }
 
-        // Smooth physiological ramp towards target (10% per second)
-        previousBpm += (targetBpm - previousBpm) * 0.10f
+        // Physiological cardiac inertia (asymmetric: slower recovery than ramp up)
+        val cardiacLagRate = if (targetBpm >= previousBpm) 0.035f else 0.016f
+        previousBpm += (targetBpm - previousBpm) * cardiacLagRate
 
+        // Non-periodic organic HRV noise (AR-1 / Ornstein-Uhlenbeck process, ±2.5 BPM)
+        if (config.enableHrvFluctuation) {
+            hrvDrift = hrvDrift * 0.92 + (Random.nextDouble(-0.35, 0.35))
+            hrvDrift = hrvDrift.coerceIn(-2.5, 2.5)
+        } else {
+            hrvDrift = 0.0
+        }
+
+        // Occasional gentle rest dip every ~120s
         val t = secondsElapsed.toDouble()
-
-        // 1. Natural HRV micro-fluctuation: subtle organic variation within ±2 to 3.5 BPM ("chỉ lệch 3-4")
-        val naturalHrv = if (config.enableHrvFluctuation) {
-            (kotlin.math.sin(t * 0.22) * 1.8 + kotlin.math.cos(t * 0.09) * 1.4).toFloat()
-        } else 0f
-
-        // 2. Occasional rest dip ("lâu lâu lệch 10 như nghỉ ngơi")
-        // Coupled with cadence dip every ~120s, eases down by ~8 to 10 BPM
         val cycleTime = (secondsElapsed % 120L).toDouble()
         val restDip = if (t >= 50.0 && cycleTime in 95.0..108.0) {
             val dipProgress = (cycleTime - 95.0) / 13.0
-            (-9.5 * kotlin.math.sin(dipProgress * Math.PI)).toFloat()
+            (-7.0 * kotlin.math.sin(dipProgress * Math.PI)).toFloat()
         } else {
             0f
         }
 
-        val finalBpm = (previousBpm + naturalHrv + restDip).roundToInt().coerceIn(45, 215)
+        val finalBpm = (previousBpm + hrvDrift.toFloat() + restDip).roundToInt().coerceIn(45, 215)
         return finalBpm
     }
 

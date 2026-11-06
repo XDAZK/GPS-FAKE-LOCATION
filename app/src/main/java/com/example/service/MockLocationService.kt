@@ -51,6 +51,8 @@ class MockLocationService : Service() {
     private var routeLegProgressMeters = 0.0
     private var routeDistanceCovered = 0.0
     private var runnerLateralOffsetMeters = 0.0
+    private var smoothedRunningSpeedKmh = 0f
+    private var speedOrganicNoise = 0.0
     private val activeTrackList = ArrayList<GeoPoint>()
 
     companion object {
@@ -376,8 +378,12 @@ class MockLocationService : Service() {
             routeLegProgressMeters = 0.0
             routeDistanceCovered = 0.0
             runnerLateralOffsetMeters = 0.0
+            smoothedRunningSpeedKmh = (config.speedKmh * 0.72f).coerceAtLeast(4.0f)
+            speedOrganicNoise = 0.0
             accumulatedSteps = 0.0
             accumulatedCalories = 0.0
+            heartRateSimulator.reset(initialBpm = 75f)
+            CadenceCalculator.reset()
             synchronized(activeTrackList) {
                 activeTrackList.clear()
                 _recordedTrack.value = emptyList()
@@ -422,21 +428,33 @@ class MockLocationService : Service() {
                     simulationElapsedSeconds++
                     val activeConf = _activeConfig.value
 
-                    // Dynamic running speed: changes pace over time (warmup, surge, cruise, recovery)
-                    val currentSpeed = if (activeConf.enableIntervalPaceShifting) {
-                        GeoUtils.getDynamicRunningSpeed(
-                            activeConf.speedKmh,
-                            simulationElapsedSeconds,
-                            activeConf.enableNaturalSpeedVariance
-                        )
+                    // Natural warmup in the first 50s (ramps smoothly from 72% up to 100%)
+                    val warmupFactor = if (simulationElapsedSeconds < 50L) {
+                        (0.72 + 0.28 * (simulationElapsedSeconds / 50.0)).toFloat()
+                    } else 1.0f
+
+                    val targetBaseSpeed = (activeConf.speedKmh * warmupFactor)
+
+                    // Human physical acceleration/deceleration momentum (avoids sharp cliff drops!)
+                    // Deceleration is gradual (~0.08 km/h per sec), taking 50-70s to slowly descend
+                    smoothedRunningSpeedKmh = GeoUtils.smoothTransitionSpeed(
+                        currentSpeedKmh = smoothedRunningSpeedKmh,
+                        targetSpeedKmh = targetBaseSpeed,
+                        maxAccelPerSec = 0.12f,
+                        maxDecelPerSec = 0.08f
+                    )
+
+                    // Non-periodic organic speed drift (AR-1 process, ±0.18 km/h, no sine wave comb teeth)
+                    if (activeConf.enableNaturalSpeedVariance) {
+                        speedOrganicNoise = speedOrganicNoise * 0.94 + Random.nextDouble(-0.025, 0.025)
+                        speedOrganicNoise = speedOrganicNoise.coerceIn(-0.18, 0.18)
                     } else {
-                        GeoUtils.getHumanizedSpeed(
-                            activeConf.speedKmh,
-                            activeConf.enableNaturalSpeedVariance
-                        )
+                        speedOrganicNoise = 0.0
                     }
 
-                    // Rich dynamic heart rate: fluctuates across 15-30 BPM range
+                    val currentSpeed = (smoothedRunningSpeedKmh + speedOrganicNoise.toFloat()).coerceAtLeast(1.0f)
+
+                    // Human cardiac response with physiological lag
                     val currentBpm = heartRateSimulator.calculateBpm(
                         currentSpeed,
                         isResting = false,
@@ -621,6 +639,8 @@ class MockLocationService : Service() {
 
                         delay(1000L)
                     }
+                    // Transition smoothly back up from stop
+                    smoothedRunningSpeedKmh = 2.5f
                 }
             }
 

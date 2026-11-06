@@ -5,11 +5,17 @@ import kotlin.random.Random
 
 object CadenceCalculator {
 
+    private var cadenceDrift = 0.0
+
+    fun reset() {
+        cadenceDrift = 0.0
+    }
+
     /**
      * Compute realistic Cadence (Steps Per Minute - SPM) based on movement speed.
      * Realistic human rhythm:
      * - Does NOT oscillate up and down like a clockwork sine wave ("không lên xuống đều như tăm")
-     * - Under normal steady running, only fluctuates slightly by 3-4 SPM ("chỉ lệch 3-4")
+     * - Under normal steady running, only fluctuates slightly by 3-4 SPM with organic non-periodic drift
      * - Occasional recovery dip: every ~2 minutes, relaxes by ~10 SPM for ~10 seconds ("lâu lâu lệch 10 như nghỉ ngơi")
      */
     fun calculateCadence(
@@ -35,10 +41,11 @@ object CadenceCalculator {
 
         val t = secondsElapsed.toDouble()
 
-        // 1. Normal human stride steady fluctuation: only deviates by ±3 to 4 SPM ("chỉ lệch 3-4")
+        // 1. Organic non-periodic stride drift (AR-1 process, ±3 SPM, no periodic sine comb teeth)
         val normalDeviation = if (config.enableHrvFluctuation) {
-            // Smooth natural drift between -3.5 and +3.5 SPM
-            (kotlin.math.sin(t * 0.18) * 2.2 + kotlin.math.cos(t * 0.07) * 1.3).toFloat()
+            cadenceDrift = cadenceDrift * 0.90 + Random.nextDouble(-0.45, 0.45)
+            cadenceDrift = cadenceDrift.coerceIn(-3.0, 3.0)
+            cadenceDrift.toFloat()
         } else {
             0f
         }

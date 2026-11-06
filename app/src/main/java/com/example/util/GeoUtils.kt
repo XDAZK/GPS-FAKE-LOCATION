@@ -137,9 +137,30 @@ object GeoUtils {
     }
 
     /**
+     * Smoothly transitions speed towards target using realistic human physical momentum limits.
+     * Prevents vertical cliff drops on Strava/Garmin when the user adjusts pace in app.
+     * - Deceleration: max ~0.08 - 0.10 km/h per sec (~50s to transition from 10 km/h to 5 km/h)
+     * - Acceleration: max ~0.12 - 0.15 km/h per sec (~30s to ramp up)
+     */
+    fun smoothTransitionSpeed(
+        currentSpeedKmh: Float,
+        targetSpeedKmh: Float,
+        maxAccelPerSec: Float = 0.12f,
+        maxDecelPerSec: Float = 0.08f
+    ): Float {
+        if (currentSpeedKmh <= 0.1f) return targetSpeedKmh
+        val delta = targetSpeedKmh - currentSpeedKmh
+        return if (delta > 0) {
+            currentSpeedKmh + delta.coerceAtMost(maxAccelPerSec)
+        } else {
+            currentSpeedKmh + delta.coerceAtLeast(-maxDecelPerSec)
+        }
+    }
+
+    /**
      * Human-like running speed simulation with natural pacing:
-     * - Warmup ramp in the first 40 seconds
-     * - Steady cruising pace with subtle organic variation (±2-3%) rather than cyclic sine oscillations
+     * - Warmup ramp in the first 50 seconds
+     * - Steady cruising pace with subtle organic variation rather than cyclic sine oscillations
      * - Occasional brief recovery/rest dip (~8-10% slower) every ~2 minutes to match the cadence & HR dip
      */
     fun getDynamicRunningSpeed(
@@ -152,37 +173,32 @@ object GeoUtils {
 
         val t = secondsElapsed.toDouble()
 
-        // 1. Warmup transition in the first 40 seconds (from 88% to 100%)
-        val warmupFactor = if (t < 40.0) {
-            0.88 + 0.12 * (t / 40.0)
+        // 1. Warmup transition in the first 50 seconds (from 75% to 100%)
+        val warmupFactor = if (t < 50.0) {
+            0.75 + 0.25 * (t / 50.0)
         } else {
             1.0
         }
 
-        // 2. Occasional rest/recovery dip every ~120 seconds, lasting ~10-12 seconds
-        // (Simulates relaxing stride, taking a breath or drinking water)
+        // 2. Occasional rest/recovery dip every ~120 seconds, lasting ~12 seconds
         val cycleTime = (secondsElapsed % 120L).toDouble()
         val recoveryDip = if (t >= 50.0 && cycleTime in 95.0..108.0) {
-            // Smooth bell-shaped dip down to -8%
             val dipProgress = (cycleTime - 95.0) / 13.0
             -0.08 * sin(dipProgress * Math.PI)
         } else {
             0.0
         }
 
-        // 3. Subtle organic micro-drift (±2% max, smooth slow frequency)
-        val organicMicro = sin(t * 0.12) * 0.015 + cos(t * 0.04) * 0.01
-
-        val combinedFactor = (warmupFactor + recoveryDip + organicMicro).coerceIn(0.75, 1.15)
+        val combinedFactor = (warmupFactor + recoveryDip).coerceIn(0.70, 1.10)
         return (baseSpeedKmh * combinedFactor).toFloat().coerceIn(3.0f, 22.0f)
     }
 
     /**
-     * Fluctuates speed naturally by ±5% to ±8% to simulate human walking/driving
+     * Fluctuates speed naturally by ±2% to simulate slight stride variation
      */
     fun getHumanizedSpeed(baseSpeedKmh: Float, enable: Boolean): Float {
         if (!enable || baseSpeedKmh <= 0) return baseSpeedKmh
-        val varianceFactor = 1.0f + (Random.nextFloat() * 0.14f - 0.07f) // -7% to +7%
+        val varianceFactor = 1.0f + (Random.nextFloat() * 0.04f - 0.02f) // ±2% instead of ±7%
         return (baseSpeedKmh * varianceFactor).coerceAtLeast(1.0f)
     }
 
