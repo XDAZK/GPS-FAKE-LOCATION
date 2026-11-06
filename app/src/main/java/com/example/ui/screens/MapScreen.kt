@@ -564,9 +564,9 @@ fun MapScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = when (simulationProgress.status) {
-                                    SimulationStatus.RUNNING -> if (simulationProgress.isLoopReversing) "Đang chạy vòng về (${simulationProgress.progressPercent}%)" else "Đang chạy (${simulationProgress.progressPercent}%)"
+                                    SimulationStatus.RUNNING -> if (simulationProgress.isLoopReversing) "Lap ${simulationProgress.currentLapNumber} [Về] (${GeoUtils.formatDistance(simulationProgress.currentLapDistanceMeters)}/1km)" else "Lap ${simulationProgress.currentLapNumber} (${GeoUtils.formatDistance(simulationProgress.currentLapDistanceMeters)}/1km)"
                                     SimulationStatus.RESTING -> "Tạm nghỉ: còn ${simulationProgress.pauseRemainingSeconds}s"
-                                    SimulationStatus.PAUSED -> "Tạm dừng (${simulationProgress.progressPercent}%)"
+                                    SimulationStatus.PAUSED -> "Tạm dừng Lap ${simulationProgress.currentLapNumber}"
                                     else -> "Sẵn sàng"
                                 },
                                 fontWeight = FontWeight.Bold,
@@ -593,9 +593,9 @@ fun MapScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Progress Bar
+                    // Progress Bar for current 1km Lap
                     LinearProgressIndicator(
-                        progress = { simulationProgress.progressPercent / 100f },
+                        progress = { (simulationProgress.currentLapDistanceMeters / 1000.0).toFloat().coerceIn(0f, 1f) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(6.dp)
@@ -614,7 +614,7 @@ fun MapScreen(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = "Đã chạy: ",
+                                    text = "Tổng: ",
                                     color = Color(0xFF94A3B8),
                                     fontSize = 11.sp
                                 )
@@ -626,7 +626,7 @@ fun MapScreen(
                                 )
                             }
                             Text(
-                                text = "Chặng này còn: ${GeoUtils.formatDistance(simulationProgress.remainingDistanceMeters)} • ❤️ ${simulationProgress.currentHeartRateBpm} BPM",
+                                text = "Lap ${simulationProgress.currentLapNumber}: ${GeoUtils.formatDistance(simulationProgress.currentLapDistanceMeters)}/1km • ❤️ ${simulationProgress.currentHeartRateBpm} BPM • 👟 ${simulationProgress.currentCadenceSpm} SPM",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 11.sp
                             )

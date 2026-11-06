@@ -1,4 +1,4 @@
-package com.example.data.model
+﻿package com.example.data.model
 
 import java.io.Serializable
 
@@ -33,7 +33,8 @@ data class SimulationConfig(
     val speedKmh: Float = 10.9f, // Default Pace 5:30 min/km (~10.9 km/h)
     val enableNaturalSpeedVariance: Boolean = true, // Natural human speed variance
     val enableIntervalPaceShifting: Boolean = true, // Dynamic interval shifts (warmup, surge, cruise, recovery)
-    val enableGpsJitter: Boolean = true, // 1-2m natural GPS drift
+    val enableGpsJitter: Boolean = true, // Natural GPS drift along track
+    val maxLateralDriftMeters: Float = 2.0f, // Độ lệch người chạy lệch tối đa 2m
     val enableRandomPause: Boolean = true, // Random rest at waypoints
     val minPauseSeconds: Int = 5,
     val maxPauseSeconds: Int = 20,
@@ -83,5 +84,8 @@ data class SimulationProgress(
     val pauseRemainingSeconds: Int = 0,
     val isMockActive: Boolean = false,
     val isStepTriggerActive: Boolean = true,
-    val isLoopReversing: Boolean = false // Đang chạy ngược về (loop reverse)
+    val isLoopReversing: Boolean = false, // Đang chạy ngược về (loop reverse)
+    val currentLapNumber: Int = 1,
+    val currentLapDistanceMeters: Double = 0.0,
+    val lapTargetMeters: Double = 1000.0
 )

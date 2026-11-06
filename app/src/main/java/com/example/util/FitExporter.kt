@@ -277,6 +277,15 @@ object FitExporter {
         var maxSpeedMps = 0.0
         var currentSegmentIdx = 0
 
+        data class FitTrackSample(
+            val fitTime: Long,
+            val distMeters: Double,
+            val speedMps: Double,
+            val hr: Int,
+            val spm: Int
+        )
+        val recordedSamples = ArrayList<FitTrackSample>(numSamples)
+
         for (s in 0 until numSamples) {
             val recordTimeMillis = startTimeMillis + (s * 1000L)
             val fitTime = toFitTimestamp(recordTimeMillis)
@@ -333,18 +342,27 @@ object FitExporter {
                 // Dynamic speed intervals (changes pace across cycles - warmup, surge, cruise, recovery)
                 instantSpeedMps = (GeoUtils.getDynamicRunningSpeed(effectiveSpeedKmh, s.toLong(), true) / 3.6).coerceIn(1.0, 7.5)
 
-                // Dynamic Heart Rate with wide physiological swing (coupled to pace surges + multi-frequency waves)
+                // Dynamic Heart Rate with physiological swing
                 val warmupProgress = (s.toDouble() / warmupDurationSec).coerceIn(0.0, 1.0)
                 val baseHr = warmupStartBpm + (targetCruiseBpm - warmupStartBpm) * sin(warmupProgress * (Math.PI / 2.0))
-                val paceSurgeRatio = (instantSpeedMps - speedMps) / speedMps.coerceAtLeast(0.5)
-                val speedHrImpact = paceSurgeRatio * 18.0 // +18 BPM on surges, -12 BPM on recovery dips
-                val multiWaveHrv = sin(s * 0.045) * 7.5 + cos(s * 0.018) * 5.5 + sin(s * 0.22) * 3.0
-                instantHr = (baseHr + speedHrImpact + multiWaveHrv).roundToInt().coerceIn(98, 195)
 
-                // Cadence fluctuates naturally with speed
-                val cadenceOscillation = sin(s * 0.035) * 3.2 + cos(s * 0.09) * 1.8 + paceSurgeRatio * 8.0
-                instantSpm = (baseRunningSpm + cadenceOscillation).roundToInt().coerceIn(120, 205)
+                // Occasional recovery dip every ~120s ("lâu lâu lệch 10 như nghỉ ngơi")
+                val cycleTime = (s % 120).toDouble()
+                val isDipActive = s >= 50 && cycleTime in 95.0..108.0
+                val dipFraction = if (isDipActive) sin(((cycleTime - 95.0) / 13.0) * Math.PI) else 0.0
+
+                // Steady state variation within ±3-4
+                val naturalHrv = sin(s * 0.18) * 2.2 + cos(s * 0.07) * 1.3
+                val hrDip = -9.5 * dipFraction
+                instantHr = (baseHr + naturalHrv + hrDip).roundToInt().coerceIn(98, 195)
+
+                // Cadence: steady with ±3-4 SPM fluctuation, and ~10 SPM drop during dip
+                val cadenceDeviation = sin(s * 0.15) * 2.5 + cos(s * 0.06) * 1.2
+                val cadDip = -10.0 * dipFraction
+                instantSpm = (baseRunningSpm + cadenceDeviation + cadDip).roundToInt().coerceIn(120, 205)
             }
+
+            recordedSamples.add(FitTrackSample(fitTime, currentDistMeters, instantSpeedMps, instantHr, instantSpm))
 
             val altScaled = ((altMeters + 500.0) * 5.0).roundToInt().coerceIn(0, 65534)
             val fitCadenceRpm = (instantSpm / 2.0).roundToInt().coerceIn(40, 110)
@@ -402,6 +420,7 @@ object FitExporter {
 
         // ==========================================
         // 5. LAP MESSAGE (Local Mesg 3) - Global Msg 19 (MANDATORY for Strava / Garmin)
+        // Writes multiple 1.0 km (1000m) Laps instead of a single total lap!
         // ==========================================
         val lapDef = byteArrayOf(
             0x43.toByte(), 0x00, 0x00,
@@ -423,23 +442,57 @@ object FitExporter {
         )
         stream.write(lapDef)
 
-        val lapData = ByteBuffer.allocate(1 + 4 + 4 + 4 + 4 + 4 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1).order(ByteOrder.LITTLE_ENDIAN).apply {
-            put(0x03.toByte())                // Header: Data msg, local 3
-            putInt(endFitTime.toInt())        // Timestamp
-            putInt(startFitTime.toInt())      // Start time
-            putInt(timeScaled)                // Total elapsed time (ms)
-            putInt(timeScaled)                // Total timer time (ms)
-            putInt(distScaled)                // Total distance (meters * 100)
-            putShort(estimatedCalories.toShort()) // Total calories
-            putShort(avgSpeedScaled.toShort()) // Avg speed (m/s * 1000)
-            putShort(maxSpeedScaled.toShort()) // Max speed (m/s * 1000)
-            put(avgHr.toByte())               // Avg heart rate
-            put(maxHr.coerceAtLeast(avgHr).toByte()) // Max heart rate
-            put(avgCadenceRpm.toByte())       // Avg cadence (single-leg RPM -> displayed as avgSpm)
-            put(0x01.toByte())                // Sport: 1 = Running
-            put(0x00.toByte())                // Sub-sport: 0 = Generic
-        }.array()
-        stream.write(lapData)
+        // Split activity into 1km laps (e.g. 0-1km, 1-2km, 2-3km, ..., remainder)
+        val numLaps = ((totalDistMeters / 1000.0).toInt() + if ((totalDistMeters % 1000.0) > 15.0 || totalDistMeters <= 1000.0) 1 else 0).coerceAtLeast(1)
+
+        for (lapIdx in 0 until numLaps) {
+            val lapStartDist = lapIdx * 1000.0
+            val lapEndDist = ((lapIdx + 1) * 1000.0).coerceAtMost(totalDistMeters)
+            val lapDistMeters = (lapEndDist - lapStartDist).coerceAtLeast(0.0)
+
+            val lapSamples = if (recordedSamples.isNotEmpty()) {
+                val matching = recordedSamples.filter {
+                    if (lapIdx == numLaps - 1) it.distMeters >= lapStartDist
+                    else it.distMeters >= lapStartDist && it.distMeters < lapEndDist
+                }
+                if (matching.isNotEmpty()) matching else listOf(recordedSamples.last())
+            } else emptyList()
+
+            val lapStartFitTime = if (lapSamples.isNotEmpty()) lapSamples.first().fitTime else startFitTime
+            val lapEndFitTime = if (lapSamples.isNotEmpty()) lapSamples.last().fitTime else endFitTime
+            val lapDurationSec = (lapEndFitTime - lapStartFitTime).coerceAtLeast(1L).toDouble()
+            val lapTimeScaled = (lapDurationSec * 1000.0).roundToInt()
+            val lapDistScaled = (lapDistMeters * 100.0).roundToInt()
+
+            val lapAvgHr = if (lapSamples.isNotEmpty()) lapSamples.map { it.hr }.average().toInt() else avgHr
+            val lapMaxHr = if (lapSamples.isNotEmpty()) lapSamples.maxOf { it.hr } else maxHr
+            val lapAvgSpm = if (lapSamples.isNotEmpty()) lapSamples.map { it.spm }.average().toInt() else avgSpm
+            val lapAvgCadenceRpm = (lapAvgSpm / 2.0).roundToInt().coerceIn(40, 110)
+
+            val lapAvgSpeedMps = if (lapDurationSec > 0) lapDistMeters / lapDurationSec else avgSpeedMps
+            val lapAvgSpeedScaled = (lapAvgSpeedMps * 1000.0).roundToInt().coerceIn(0, 65534)
+            val lapMaxSpeedMps = if (lapSamples.isNotEmpty()) lapSamples.maxOf { it.speedMps } else maxSpeedMps
+            val lapMaxSpeedScaled = (lapMaxSpeedMps * 1000.0).roundToInt().coerceIn(0, 65534)
+            val lapCalories = ((lapDurationSec / 60.0) * 11.2).roundToInt().coerceIn(1, 9999)
+
+            val lapData = ByteBuffer.allocate(1 + 4 + 4 + 4 + 4 + 4 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 1).order(ByteOrder.LITTLE_ENDIAN).apply {
+                put(0x03.toByte())                    // Header: Data msg, local 3
+                putInt(lapEndFitTime.toInt())         // Timestamp
+                putInt(lapStartFitTime.toInt())       // Start time
+                putInt(lapTimeScaled)                 // Total elapsed time (ms)
+                putInt(lapTimeScaled)                 // Total timer time (ms)
+                putInt(lapDistScaled)                 // Total distance (meters * 100)
+                putShort(lapCalories.toShort())       // Total calories
+                putShort(lapAvgSpeedScaled.toShort()) // Avg speed (m/s * 1000)
+                putShort(lapMaxSpeedScaled.toShort()) // Max speed (m/s * 1000)
+                put(lapAvgHr.toByte())                // Avg heart rate
+                put(lapMaxHr.coerceAtLeast(lapAvgHr).toByte()) // Max heart rate
+                put(lapAvgCadenceRpm.toByte())        // Avg cadence (single-leg RPM -> displayed as avgSpm)
+                put(0x01.toByte())                    // Sport: 1 = Running
+                put(0x00.toByte())                    // Sub-sport: 0 = Generic
+            }.array()
+            stream.write(lapData)
+        }
 
         // ==========================================
         // 6. SESSION SUMMARY MESSAGE (Local Mesg 4) - Global Msg 18

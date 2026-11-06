@@ -215,12 +215,44 @@ fun SimulationSettingsSheet(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Độ nhiễu GPS vi mô (Jitter)", fontWeight = FontWeight.Medium, color = Color.White)
-                            Text("Tạo sai số 1-2m mô phỏng anten thu GPS thật của điện thoại", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                            Text("Tạo sai số nhẹ tự nhiên bám sát line, không bị lệch ngang giật cục", color = Color(0xFF94A3B8), fontSize = 11.sp)
                         }
                         Switch(
                             checked = config.enableGpsJitter,
                             onCheckedChange = { onConfigChange(config.copy(enableGpsJitter = it)) },
                             colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF34D399))
+                        )
+                    }
+
+                    if (config.enableGpsJitter) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Độ lệch ngang tối đa:",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                text = "${String.format(java.util.Locale.US, "%.1f", config.maxLateralDriftMeters)} m (tối đa 2m)",
+                                color = Color(0xFF34D399),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                        Slider(
+                            value = config.maxLateralDriftMeters,
+                            onValueChange = { onConfigChange(config.copy(maxLateralDriftMeters = it.coerceIn(0.2f, 2.0f))) },
+                            valueRange = 0.2f..2.0f,
+                            steps = 17, // 0.1m step increments
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF34D399),
+                                activeTrackColor = Color(0xFF10B981),
+                                inactiveTrackColor = Color(0xFF334155)
+                            )
                         )
                     }
                 }

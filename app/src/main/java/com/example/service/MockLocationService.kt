@@ -50,6 +50,7 @@ class MockLocationService : Service() {
     private var routeCurrentPos: GeoPoint? = null
     private var routeLegProgressMeters = 0.0
     private var routeDistanceCovered = 0.0
+    private var runnerLateralOffsetMeters = 0.0
     private val activeTrackList = ArrayList<GeoPoint>()
 
     companion object {
@@ -330,7 +331,7 @@ class MockLocationService : Service() {
                     accumulatedSteps += (currentCadence / 60.0)
                 }
 
-                val jitteredPoint = GeoUtils.applyGpsJitter(point, currentConf.enableGpsJitter)
+                val jitteredPoint = GeoUtils.applyGpsJitter(point, currentConf.enableGpsJitter, currentConf.maxLateralDriftMeters)
                     .copy(heartRate = currentBpm, cadence = currentCadence)
                 mockLocationManager.pushMockLocation(
                     geoPoint = jitteredPoint,
@@ -374,6 +375,7 @@ class MockLocationService : Service() {
             routeCurrentPos = waypoints[0]
             routeLegProgressMeters = 0.0
             routeDistanceCovered = 0.0
+            runnerLateralOffsetMeters = 0.0
             accumulatedSteps = 0.0
             accumulatedCalories = 0.0
             synchronized(activeTrackList) {
@@ -445,7 +447,8 @@ class MockLocationService : Service() {
                     val currentCadence = CadenceCalculator.calculateCadence(
                         currentSpeed,
                         isResting = false,
-                        config = activeConf
+                        config = activeConf,
+                        secondsElapsed = simulationElapsedSeconds
                     )
 
                     val calDelta = CadenceCalculator.computeCaloriesDeltaKcal(
@@ -470,8 +473,26 @@ class MockLocationService : Service() {
                     val interpolatedPoint = GeoUtils.interpolate(startOfLeg, nextWaypoint, fraction)
                     routeCurrentPos = interpolatedPoint
 
-                    val jitteredPoint = GeoUtils.applyGpsJitter(interpolatedPoint, activeConf.enableGpsJitter)
-                        .copy(heartRate = currentBpm, cadence = currentCadence)
+                    // Smooth lateral drift along the line: strictly limited to maxLateralDriftMeters (max 2.0m)
+                    if (activeConf.enableGpsJitter) {
+                        val maxDrift = activeConf.maxLateralDriftMeters.coerceIn(0.2f, 2.0f).toDouble()
+                        val targetOffset = Random.nextDouble(-maxDrift, maxDrift)
+                        val delta = (targetOffset - runnerLateralOffsetMeters) * 0.08
+                        runnerLateralOffsetMeters = (runnerLateralOffsetMeters + delta.coerceIn(-0.15, 0.15)).coerceIn(-maxDrift, maxDrift)
+                    } else {
+                        runnerLateralOffsetMeters = 0.0
+                    }
+
+                    val jitteredPoint = if (activeConf.enableGpsJitter) {
+                        GeoUtils.applySmoothRunnerOffset(
+                            point = interpolatedPoint,
+                            bearingDeg = bearing,
+                            lateralOffsetMeters = runnerLateralOffsetMeters,
+                            maxLateralMeters = activeConf.maxLateralDriftMeters
+                        ).copy(heartRate = currentBpm, cadence = currentCadence)
+                    } else {
+                        interpolatedPoint.copy(heartRate = currentBpm, cadence = currentCadence)
+                    }
 
                     mockLocationManager.pushMockLocation(
                         geoPoint = jitteredPoint,
@@ -489,6 +510,11 @@ class MockLocationService : Service() {
                         activeTrackList.add(recordedPoint)
                         _recordedTrack.value = activeTrackList.toList()
                     }
+
+                    // Calculate 1km (1000m) Lap progression
+                    val currentLap = (routeDistanceCovered / 1000.0).toInt() + 1
+                    val lapDistanceCovered = routeDistanceCovered % 1000.0
+                    val lapPercent = ((lapDistanceCovered / 1000.0) * 100).toInt().coerceIn(0, 100)
 
                     val singlePassDist = if (totalDistance > 0) totalDistance else 1000.0
                     val legFractionOfTotal = (routeDistanceCovered % singlePassDist)
@@ -511,14 +537,17 @@ class MockLocationService : Service() {
                         remainingDistanceMeters = remainingLegDist,
                         remainingTimeSeconds = remainingSeconds,
                         isMockActive = true,
-                        isLoopReversing = routeIsReversing
+                        isLoopReversing = routeIsReversing,
+                        currentLapNumber = currentLap,
+                        currentLapDistanceMeters = lapDistanceCovered,
+                        lapTargetMeters = 1000.0
                     )
 
                     val dirBadge = if (routeIsReversing) " [Vòng về] " else " "
                     val notif = buildNotification(
-                        title = "GeoSim: Đã chạy ${GeoUtils.formatDistance(routeDistanceCovered)}$dirBadge• ❤️ ${currentBpm} BPM",
-                        content = "Pace: ${GeoUtils.formatPace(currentSpeed)} (${String.format(java.util.Locale.US, "%.1f", currentSpeed)} km/h) | 👟 ${currentCadence} SPM",
-                        progressPercent = percent
+                        title = "GeoSim: Lap $currentLap (${GeoUtils.formatDistance(lapDistanceCovered)} / 1km) • ❤️ ${currentBpm} BPM",
+                        content = "Tổng: ${GeoUtils.formatDistance(routeDistanceCovered)}$dirBadge| Pace: ${GeoUtils.formatPace(currentSpeed)} | 👟 ${currentCadence} SPM",
+                        progressPercent = lapPercent
                     )
                     notificationManager.notify(NOTIFICATION_ID, notif)
 
@@ -576,7 +605,7 @@ class MockLocationService : Service() {
                         )
 
                         mockLocationManager.pushMockLocation(
-                            geoPoint = GeoUtils.applyGpsJitter(nextWaypoint, currentConfig.enableGpsJitter).copy(heartRate = restingBpm),
+                            geoPoint = GeoUtils.applyGpsJitter(nextWaypoint, currentConfig.enableGpsJitter, currentConfig.maxLateralDriftMeters).copy(heartRate = restingBpm),
                             speedKmh = 0f,
                             bearing = bearing,
                             caloriesKcal = accumulatedCalories,

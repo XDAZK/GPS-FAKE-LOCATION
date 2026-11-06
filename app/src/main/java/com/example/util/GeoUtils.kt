@@ -57,18 +57,50 @@ object GeoUtils {
     /**
      * Adds natural micro-jitter to mimic realistic GPS hardware inaccuracies (~1-2.5 meters)
      */
-    fun applyGpsJitter(point: GeoPoint, enable: Boolean): GeoPoint {
+    fun applyGpsJitter(point: GeoPoint, enable: Boolean, maxMeters: Float = 2.0f): GeoPoint {
         if (!enable) return point
-        // 1 meter is approx 0.000009 degrees latitude
-        val jitterMeters = 1.5
+        val jitterMeters = maxMeters.coerceIn(0.5f, 2.0f).toDouble()
         val latOffset = (Random.nextDouble(-jitterMeters, jitterMeters) / 111111.0)
         val lngOffset = (Random.nextDouble(-jitterMeters, jitterMeters) / (111111.0 * cos(Math.toRadians(point.latitude))))
-        val altOffset = Random.nextDouble(-0.8, 0.8)
+        val altOffset = Random.nextDouble(-0.5, 0.5)
 
         return GeoPoint(
             latitude = point.latitude + latOffset,
             longitude = point.longitude + lngOffset,
-            altitude = point.altitude + altOffset
+            altitude = (point.altitude + altOffset).coerceIn(1.1, 4.9),
+            name = point.name,
+            time = point.time,
+            heartRate = point.heartRate,
+            cadence = point.cadence
+        )
+    }
+
+    /**
+     * Applies a smooth lateral drift perpendicular to the direction of travel (bearing +/- 90 degrees).
+     * The runner moves straight along the line with only gentle lane sway, strictly bounded
+     * to a maximum deviation of [maxLateralMeters] (toan bo toi da 2.0m).
+     */
+    fun applySmoothRunnerOffset(
+        point: GeoPoint,
+        bearingDeg: Float,
+        lateralOffsetMeters: Double,
+        maxLateralMeters: Float = 2.0f
+    ): GeoPoint {
+        val maxMeters = maxLateralMeters.coerceIn(0.2f, 2.0f).toDouble()
+        val clampedOffset = lateralOffsetMeters.coerceIn(-maxMeters, maxMeters)
+
+        val perpAngleRad = Math.toRadians((bearingDeg + 90.0) % 360.0)
+        val latOffset = (clampedOffset * cos(perpAngleRad)) / 111111.0
+        val lngOffset = (clampedOffset * sin(perpAngleRad)) / (111111.0 * cos(Math.toRadians(point.latitude)))
+
+        return GeoPoint(
+            latitude = point.latitude + latOffset,
+            longitude = point.longitude + lngOffset,
+            altitude = point.altitude,
+            name = point.name,
+            time = point.time,
+            heartRate = point.heartRate,
+            cadence = point.cadence
         )
     }
 
@@ -105,9 +137,10 @@ object GeoUtils {
     }
 
     /**
-     * Human-like running speed simulation that dynamically shifts pace across
-     * interval cycles (warmup, surge/pickup, steady cruise, ease/recovery)
-     * so that the speed never stays on a flat line.
+     * Human-like running speed simulation with natural pacing:
+     * - Warmup ramp in the first 40 seconds
+     * - Steady cruising pace with subtle organic variation (±2-3%) rather than cyclic sine oscillations
+     * - Occasional brief recovery/rest dip (~8-10% slower) every ~2 minutes to match the cadence & HR dip
      */
     fun getDynamicRunningSpeed(
         baseSpeedKmh: Float,
@@ -119,25 +152,28 @@ object GeoUtils {
 
         val t = secondsElapsed.toDouble()
 
-        // 1. Warmup transition in the first 45 seconds (starts at 82% and ramps to 100%)
-        val warmupFactor = if (t < 45.0) {
-            0.82 + 0.18 * (t / 45.0)
+        // 1. Warmup transition in the first 40 seconds (from 88% to 100%)
+        val warmupFactor = if (t < 40.0) {
+            0.88 + 0.12 * (t / 40.0)
         } else {
             1.0
         }
 
-        // 2. Macro Interval Wave (period ~75s, amplitude ±15%): alternates between pickup and recovery
-        val intervalWave = sin(t * (2.0 * Math.PI / 75.0)) * 0.15
+        // 2. Occasional rest/recovery dip every ~120 seconds, lasting ~10-12 seconds
+        // (Simulates relaxing stride, taking a breath or drinking water)
+        val cycleTime = (secondsElapsed % 120L).toDouble()
+        val recoveryDip = if (t >= 50.0 && cycleTime in 95.0..108.0) {
+            // Smooth bell-shaped dip down to -8%
+            val dipProgress = (cycleTime - 95.0) / 13.0
+            -0.08 * sin(dipProgress * Math.PI)
+        } else {
+            0.0
+        }
 
-        // 3. Secondary Wave (period ~31s, amplitude ±7%): short bursts / traffic & terrain checks
-        val shortBurstWave = cos(t * (2.0 * Math.PI / 31.0)) * 0.07
+        // 3. Subtle organic micro-drift (±2% max, smooth slow frequency)
+        val organicMicro = sin(t * 0.12) * 0.015 + cos(t * 0.04) * 0.01
 
-        // 4. Cadence/Footstrike micro fluctuation (period ~7s, amplitude ±3%)
-        val strideMicroWave = sin(t * 0.9) * 0.03
-
-        val combinedFactor = (warmupFactor + intervalWave + shortBurstWave + strideMicroWave)
-            .coerceIn(0.68, 1.35)
-
+        val combinedFactor = (warmupFactor + recoveryDip + organicMicro).coerceIn(0.75, 1.15)
         return (baseSpeedKmh * combinedFactor).toFloat().coerceIn(3.0f, 22.0f)
     }
 

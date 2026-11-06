@@ -1,4 +1,4 @@
-package com.example
+﻿package com.example
 
 import com.example.data.model.GeoPoint
 import com.example.util.FitExporter

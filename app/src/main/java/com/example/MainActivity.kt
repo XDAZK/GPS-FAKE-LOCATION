@@ -1,4 +1,4 @@
-package com.example
+﻿package com.example
 
 import android.Manifest
 import android.content.pm.PackageManager

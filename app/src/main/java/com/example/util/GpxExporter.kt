@@ -37,13 +37,28 @@ object GpxExporter {
             sb.append("  </wpt>\n")
         }
 
-        // Track segment
+        // Track segments (Split into 1.0 km Laps)
         sb.append("  <trk>\n")
         sb.append("    <name>").append(escapeXml(trackName)).append("</name>\n")
         sb.append("    <trkseg>\n")
 
-        var currentTime = System.currentTimeMillis() - (points.size * 5000L)
+        var currentTime = System.currentTimeMillis() - (points.size * 1000L)
+        var currentLapDist = 0.0
+        var prevPoint: GeoPoint? = null
+
         points.forEach { pt ->
+            if (prevPoint != null) {
+                val dist = GeoUtils.distanceBetween(prevPoint!!, pt)
+                currentLapDist += dist
+                // Trigger next 1km lap segment
+                if (currentLapDist >= 1000.0) {
+                    sb.append("    </trkseg>\n")
+                    sb.append("    <trkseg>\n")
+                    currentLapDist = 0.0
+                }
+            }
+            prevPoint = pt
+
             sb.append("      <trkpt lat=\"${pt.latitude}\" lon=\"${pt.longitude}\">\n")
             sb.append("        <ele>${String.format(Locale.US, "%.1f", pt.altitude)}</ele>\n")
             sb.append("        <time>${isoDateFormat.format(Date(if (pt.time > 0) pt.time else currentTime))}</time>\n")
@@ -60,7 +75,7 @@ object GpxExporter {
                 sb.append("        </extensions>\n")
             }
             sb.append("      </trkpt>\n")
-            currentTime += 5000L
+            currentTime += 1000L
         }
 
         sb.append("    </trkseg>\n")

@@ -59,32 +59,27 @@ class HeartRateSimulator(context: Context) {
             }
         }
 
-        // Smooth physiological ramp towards target (12% per second)
-        previousBpm += (targetBpm - previousBpm) * 0.12f
+        // Smooth physiological ramp towards target (10% per second)
+        previousBpm += (targetBpm - previousBpm) * 0.10f
 
-        // Multi-frequency biological cardiac waves:
-        // 1. Respiration Sinus Arrhythmia (RSA, ~15 breaths/min, period 4-5s): ±4 to 6 BPM
         val t = secondsElapsed.toDouble()
-        val rsaWave = kotlin.math.sin(t * 0.35) * 4.8
 
-        // 2. Mayer blood-pressure waves (period ~10-15s): ±5 to 8 BPM
-        val mayerWave = kotlin.math.cos(t * 0.08) * 6.5
-
-        // 3. Long-term cardiac interval drift (period ~60s): ±5 to 7 BPM
-        val intervalDrift = kotlin.math.sin(t * 0.02) * 5.2
-
-        // 4. Natural HRV micro-noise
-        val microNoise = if (config.enableHrvFluctuation) {
-            (Random.nextFloat() * 6f - 3f)
+        // 1. Natural HRV micro-fluctuation: subtle organic variation within ±2 to 3.5 BPM ("chỉ lệch 3-4")
+        val naturalHrv = if (config.enableHrvFluctuation) {
+            (kotlin.math.sin(t * 0.22) * 1.8 + kotlin.math.cos(t * 0.09) * 1.4).toFloat()
         } else 0f
 
-        val totalOscillation = if (config.enableHrvFluctuation) {
-            (rsaWave + mayerWave + intervalDrift + microNoise).toFloat()
+        // 2. Occasional rest dip ("lâu lâu lệch 10 như nghỉ ngơi")
+        // Coupled with cadence dip every ~120s, eases down by ~8 to 10 BPM
+        val cycleTime = (secondsElapsed % 120L).toDouble()
+        val restDip = if (t >= 50.0 && cycleTime in 95.0..108.0) {
+            val dipProgress = (cycleTime - 95.0) / 13.0
+            (-9.5 * kotlin.math.sin(dipProgress * Math.PI)).toFloat()
         } else {
-            (rsaWave * 0.5 + mayerWave * 0.5).toFloat()
+            0f
         }
 
-        val finalBpm = (previousBpm + totalOscillation).roundToInt().coerceIn(45, 215)
+        val finalBpm = (previousBpm + naturalHrv + restDip).roundToInt().coerceIn(45, 215)
         return finalBpm
     }
 
